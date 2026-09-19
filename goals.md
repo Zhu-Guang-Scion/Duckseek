@@ -76,8 +76,8 @@
 
 
 
-**里程碑 5：MCP + Skill 封装** —— 状态：🟡 进行中（独立小里程碑，不改变阶段划分）
-- MCP Server（tools：status / list_tables / ask）—— 🟢（T17，mcp 2.2 stdio）；SKILL.md 封装 —— ⚪ 待任务书
+**里程碑 5：MCP + Skill 封装** —— 状态：🟡 进行中（独立小里程碑，不改变阶段划分；两项已完成，待人类通读 SKILL.md 后收官）
+- MCP Server（tools：status / list_tables / ask）—— 🟢（T17，mcp 2.2 stdio）；SKILL.md 封装 —— 🟢（T18，skills/nl2data/ 三件套）
 - 完成判据：AI 宿主可显式调用 nl2data 完成接入到问答全流程；缺失配置时由宿主 LLM 向用户索要；密钥零出现在 tool 参数/返回值（专项测试）
 ### 阶段二：准确率工程（MVP 验收后启动）
 多候选 SQL + 选择器、实体索引、Python 分析沙箱、查询缓存。
@@ -157,3 +157,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-19 V4 收官：A1 三条处置（门禁 80→85 三处同步；M4 文件统一 commit「M4 收官」；章节引用核实为文档链无误）；B 受控实验（改动轮 L3 0.75→0.65 单句措辞即被感知，恢复轮 0.80 与基线差恰 1 case 且为已知摆动项）——完成判据「改提示词后一键回归，指标可对比」实证达成；C 质量门全过（85 新门禁）、里程碑 4 🟢、§7 逐项标注归属、docs/milestone-4-notes.md 封存。阶段一个人 MVP 四大里程碑全部完成。
 - 2026-09-19 M5 立项（MCP + Skill 封装）：人类希望 AI 宿主可显式调用 nl2data，调用中由宿主 LLM 向用户索要缺失配置；人类无偏好，顾问裁定批准立项。§3 新增锁定决策 9（仅经 MCP tools + SKILL.md，tools 面最小化 status/list_tables/ask，密钥只走环境变量且不得出现在任何 tool 参数与返回值）。
 - 2026-09-19 T17 MCP Server 完成：新模块 mcp_server/（决策 9 最小三工具 status/list_tables/ask，对既有模块只 import；ask 复用 ask_once(no_interpret=True)，解读留给宿主 LLM）；依赖 mcp 2.2.0（FastMCP 已更名 MCPServer，同步工具经 anyio.to_thread 卸载不阻塞事件循环）；CLI 增 `nl2data mcp serve`（stdio）；密钥纪律三处落地（status 只报 presence 布尔与缺失名、ask 异常经 _scrub 六变量值清洗、LlmError 原生脱敏），专用测试断言哨兵值零出现；注入防护按任务书不加新防线——单元级敌意模型（DELETE SQL）被既有护栏三拒、表行数不变，真实注入（"忽略之前的规则"）模型诚实反问只读约束。真实链路验证：stdio 子进程全流程（status ready=true / list_tables 三表行数 / golden #1 答案 3,952,432 与参考值一致）+ slow 测试（内存客户端 golden #1）。质量门：ruff 零告警、488 passed 覆盖 91.41%。mcpServers 配置样例见交付报告；SKILL.md 待后续任务书。
+- 2026-09-19 T18 Skill 包完成：skills/nl2data/ 三件套（SKILL.md 主文件 97 行 + config-template.sh 六变量空占位模板（变量名与 §3 决策 3/8 一致，硅基流动公开示例注释，零密钥零内部地址）+ README.md 宿主注册指南（mcpServers JSON 片段即 T17 交付样例落地版，Claude Code/Cursor/zcode 注册位置，env 块显式传六变量的说明））。SKILL.md 按 progressive disclosure：第三人称 frontmatter 触发场景、快速判断（禁绕过口径层直连 DuckDB）、四步工作流（status 诊断含缺配置固定话术与 CLI 三步命令 → list_tables → ask（needs_clarification 原样转达、新问句重发）→ 呈现附 SQL 可核验提醒）、四条纪律逐条成文、故障速查表五行。验收标准机器化为 tests/test_skill_docs.py 8 项（目录齐备/<150 行/工具引用恰为 T17 三件无悬空/四纪律关键词/工作流四步与速查三行/引用文件存在/六变量一致/全包无密钥字面量）。质量门：ruff 零告警、496 passed 覆盖 91.41%。SKILL.md 全文已随交付报告呈人类过目。
