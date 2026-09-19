@@ -1,0 +1,31 @@
+# Project artifacts (never commit generated data)
+data/
+*.duckdb
+*.parquet
+*.duckdb.wal
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local helper dirs from desktop tooling (not part of the project)
+.v2c/
+.video_agent/

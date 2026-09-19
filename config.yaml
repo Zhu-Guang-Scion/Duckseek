@@ -1,0 +1,133 @@
+# nl2data configuration.
+# All paths are resolved relative to this file's directory.
+# Override the file location with the NL2DATA_CONFIG environment variable.
+paths:
+  data_dir: data
+  parquet_dir: data/parquet
+  warehouse: data/warehouse.duckdb
+  catalog: data/catalog/catalog.yaml
+  profiles_dir: data/catalog/profiles
+  # Milestone 2 knowledge files / artifacts.
+  glossary: data/catalog/glossary.yaml
+  cards_dir: data/catalog/cards
+  cards_md_dir: data/catalog/cards_md
+  table_notes: docs/table_notes.md
+  # Hybrid retrieval index artifacts (LanceDB + embedding disk cache).
+  index_dir: data/index
+  # Overflow result details land here as Parquet (cleaned periodically).
+  scratch_dir: data/scratch
+  # Per-question audit trail (JSONL, one file per day).
+  audit_dir: data/audit
+
+ingest:
+  # goals.md §5.4: clean names are at most 63 characters.
+  max_name_length: 63
+  # Rows scanned when auto-detecting the header row (title rows are skipped).
+  header_scan_rows: 5
+
+# mdbtools binaries used by `nl2data ingest access` (must be on PATH or be
+# absolute paths). Access ingestion is unavailable without them.
+# Date formats are passed to mdb-export (-D/-T) to avoid locale drift.
+mdbtools:
+  mdb_tables_cmd: mdb-tables
+  mdb_export_cmd: mdb-export
+  timeout_seconds: 300
+  date_format: "%Y-%m-%d"
+  datetime_format: "%Y-%m-%d %H:%M:%S"
+
+profile:
+  # A string/boolean column whose distinct count is at or below this is
+  # treated as an enum and its full value list is stored in the profile.
+  enum_max_distinct: 50
+  # Number of sample values recorded per column.
+  sample_values_limit: 5
+  # Rows fetched once per table to derive per-column sample values.
+  sample_rows: 100
+  # Quantiles recorded for numeric columns (labels become p25/p50/p75).
+  quantiles: [0.25, 0.5, 0.75]
+  # Tables above this row count are profiled on a sampled basis.
+  sampled_over_rows: 5000000
+  # Sampling fraction (Bernoulli) used when a table qualifies as big.
+  sample_fraction: 0.1
+
+# M-Schema table-card generation (T5).
+cards:
+  # enum_values entries longer than this are truncated in cards.
+  enum_value_max_chars: 50
+  # Tables with more columns fold the per-column list in Markdown
+  # (JSON always keeps every column).
+  markdown_column_fold_limit: 100
+
+# Token estimation used for prompt budgets (T5 cards, T7 retrieval).
+tokens:
+  # len_div_4: a conservative len(text)//4 estimate (tiktoken later).
+  estimator: len_div_4
+
+# Hybrid retrieval (T7). Embedding credentials come from the environment
+# (goals.md decision 8): EMB_BASE_URL / EMB_API_KEY / EMB_MODEL.
+retrieval:
+  # Default Top-K tables returned per query.
+  top_k: 5
+  # Prompt-material budget; cards are packed greedily by fused score until
+  # their token estimates exceed this.
+  token_budget: 2000
+  # Reciprocal Rank Fusion constant and per-channel weights.
+  rrf_k: 60
+  weight_vector: 0.5
+  weight_bm25: 0.5
+  # OpenAI-compatible embedding client behaviour (BAAI/bge-m3: 1024 dims,
+  # batch <= 32).
+  embedding_batch_size: 32
+  embedding_timeout_seconds: 30
+  embedding_max_retries: 5
+  embedding_dimensions: 1024
+
+# LLM chat (T8). Credentials from the environment (goals.md decision 3):
+# LLM_BASE_URL / LLM_API_KEY / LLM_MODEL — never in this file.
+llm:
+  temperature: 0.0
+  max_retries: 3
+  timeout_s: 60
+  max_tokens: 4096
+
+# SQL guardrails (T10). Whitelisted tables/columns come from the catalog at
+# validation time, not from this file; these are the tunable thresholds.
+guard:
+  # LIMIT appended when the model forgets one.
+  default_limit: 500
+  # Hard cap rewritten over any larger LIMIT.
+  limit_cap: 10000
+  # Reject these function-name prefixes anywhere in the parse tree.
+  blocked_function_prefixes: [duckdb_, list_, pg_, current_setting, version]
+  # Reject these functions when called as table sources (FROM/JOIN).
+  blocked_table_functions: [read_csv, read_parquet, read_xlsx, read_json,
+                            read_blob, glob, sqlite_scan, sqlite_attach,
+                            postgres_scan, mysql_scan, delta_scan, iceberg_scan]
+
+# SQL generation prompts (T9).
+sqlgen:
+  # Number of few-shot examples injected from sqlgen/examples/*.md
+  # (0 disables; README.md is always skipped).
+  few_shot_count: 4
+
+# Sandboxed execution (T11).
+exec:
+  # Query wall-clock budget; timed-out queries are cancelled.
+  timeout_seconds: 60
+  # Rows returned inline in ExecutionResult.rows.
+  sample_rows: 20
+  # Result sets larger than this get a statistical profile.
+  profile_over_rows: 50
+  # Top-N frequency entries per text column in the profile.
+  text_top_n: 5
+
+# Ask loop (T12).
+qa:
+  # Max generate->validate->run round trips per question before giving up
+  # and showing the last SQL plus the failure reason.
+  max_attempts: 3
+
+# Regression-eval LLM parameters (T15/G8): eval-time sampling determinism.
+eval:
+  temperature: 0.0
+  runs_per_case: 3

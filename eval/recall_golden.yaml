@@ -1,0 +1,717 @@
+# nl2data 检索召回 golden 评测集(T7 recall runner 的输入)
+#
+# - 数据来源:NYC TLC Trip Record Data 2026-03 切片(yellow/green,3,952,451 行 /
+#   44,208 行)+ 官方 taxi_zone_lookup.csv(265 行,转换为 Parquet 注册)。
+# - 录入日期:2026-09-18。
+# - 表名映射说明:三张表以恒等映射注册(yellow_tripdata / green_tripdata /
+#   taxi_zones,表名 == catalog 安全名),expected_tables 原样使用逻辑名,
+#   未发生任何批量替换。
+# - 用例数量:20 条(早期任务书"24"为笔误,人类已确认以 20 条为准)。
+# - question / note 原样保留人类提供措辞,不得改写。
+cases:
+  # ============== 一、单表精准区分层（基础必测） ==============
+  # 设计目的：验证双表共存下能准确识别业务主体，不串表、不错召
+  # 对应失败模式：黄/绿车语义混淆、业务主体识别错误、表名映射偏差
+  - section: "一、单表精准区分层"
+    question: "2026年3月黄色出租车的总订单量是多少？"
+    expected_tables: [yellow_tripdata]
+    note: "明确业务主体为黄车，验证不会误召回绿车表"
+    expected_sql: |
+      SELECT COUNT(*) AS order_count
+      FROM yellow_tripdata
+      WHERE date_trunc('month', tpep_pickup_datetime) = DATE '2026-03-01'
+    expected_result:
+      columns: ["order_count"]
+      rowcount: 1
+      rows:
+        - [3952432]
+    result_tolerance: exact
+
+  - section: "一、单表精准区分层"
+    question: "绿色出租车的平均行程距离是多少英里？"
+    expected_tables: [green_tripdata]
+    note: "明确业务主体为绿车，验证不会误召回黄车表"
+    expected_sql: |
+      SELECT AVG(trip_distance) AS avg_trip_distance
+      FROM green_tripdata
+    expected_result:
+      columns: ["avg_trip_distance"]
+      rowcount: 1
+      rows:
+        - [12.249314151284823]
+    result_tolerance: float_rel_1e_4
+
+  - section: "一、单表精准区分层"
+    question: "所有订单的电召费总收入是多少？"
+    expected_tables: [green_tripdata]
+    note: "ehail_fee为绿车独有字段，验证不会因「所有订单」误导召回黄车表"
+    expected_sql: |
+      SELECT SUM(ehail_fee) AS total_ehail_fee
+      FROM green_tripdata
+    expected_result:
+      columns: ["total_ehail_fee"]
+      rowcount: 1
+      rows:
+        - [null]
+    result_tolerance: exact
+
+  - section: "一、单表精准区分层"
+    question: "信用卡支付的订单占比是多少？"
+    expected_tables: [yellow_tripdata, green_tripdata]
+    note: "未限定车型时，支付方式为两张表共有字段，需同时召回双表统计全量订单"
+    expected_sql: |
+      SELECT ROUND(SUM(credit_cnt) * 100.0 / SUM(cnt), 2) AS credit_pct
+      FROM (
+        SELECT COUNT(*) AS cnt, COUNT(*) FILTER (WHERE payment_type = 1) AS credit_cnt
+        FROM yellow_tripdata
+        UNION ALL
+        SELECT COUNT(*), COUNT(*) FILTER (WHERE payment_type = 1)
+        FROM green_tripdata
+      ) t
+    expected_result:
+      columns: ["credit_pct"]
+      rowcount: 1
+      rows:
+        - [65.99]
+    result_tolerance: float_rel_1e_4
+
+  # ============== 二、单事实表+维度表 标准跨表层 ==============
+  # 设计目的：验证每张行程表都能独立正确关联共享维度表，不漏关联、不错关联
+  # 对应失败模式：ID字段无维度意识、区域语义仅映射单表、维度表漏召
+  - section: "二、单事实表+维度表 标准跨表层"
+    question: "曼哈顿区黄色出租车的上客订单量有多少？"
+    expected_tables: [yellow_tripdata, taxi_zones]
+    note: "黄车+区域维度；PULocationID为数字编码，需关联taxi_zones获取行政区"
+    expected_sql: |
+      SELECT COUNT(*) AS order_count
+      FROM yellow_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      WHERE z.borough = 'Manhattan'
+    expected_result:
+      columns: ["order_count"]
+      rowcount: 1
+      rows:
+        - [3391948]
+    result_tolerance: exact
+
+  - section: "二、单事实表+维度表 标准跨表层"
+    question: "布鲁克林区绿色出租车的平均总车费是多少？"
+    expected_tables: [green_tripdata, taxi_zones]
+    note: "绿车+区域维度；验证绿车的LocationID也能正确映射到共享维度表"
+    expected_sql: |
+      SELECT AVG(t.total_amount) AS avg_total_amount
+      FROM green_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      WHERE z.borough = 'Brooklyn'
+    expected_result:
+      columns: ["avg_total_amount"]
+      rowcount: 1
+      rows:
+        - [29.57466009064254]
+    result_tolerance: float_rel_1e_4
+
+  - section: "二、单事实表+维度表 标准跨表层"
+    question: "肯尼迪机场上客的绿车订单中，街招单和网约单各占多少？"
+    expected_tables: [green_tripdata, taxi_zones]
+    note: "绿车独有trip_type编码 + 区域维度；需同时识别业务编码和区域关联"
+    expected_sql: |
+      SELECT t.trip_type, COUNT(*) AS order_count
+      FROM green_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      WHERE z.zone = 'JFK Airport'
+      GROUP BY t.trip_type
+      ORDER BY t.trip_type
+    expected_result:
+      columns: ["trip_type", "order_count"]
+      rowcount: 3
+      rows:
+        - [1, 6]
+        - [2, 4]
+        - [null, 1]
+    result_tolerance: exact
+
+  - section: "二、单事实表+维度表 标准跨表层"
+    question: "上客量最高的5个区域中，黄车订单量分别是多少？"
+    expected_tables: [yellow_tripdata, taxi_zones]
+    note: "需关联维度表返回区域名称，仅行程表无法输出可读区域名"
+    expected_sql: |
+      SELECT z.zone, COUNT(*) AS pickup_count
+      FROM yellow_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      GROUP BY z.zone
+      ORDER BY pickup_count DESC
+      LIMIT 5
+    expected_result:
+      columns: ["zone", "pickup_count"]
+      rowcount: 5
+      rows:
+        - ["Upper East Side South", 174403]
+        - ["Midtown Center", 165350]
+        - ["Upper East Side North", 157296]
+        - ["JFK Airport", 153791]
+        - ["Midtown East", 121946]
+    result_tolerance: exact
+
+  # ============== 三、双事实表联合对比跨表层（双表专属核心用例） ==============
+  # 设计目的：验证对比分析场景下，能同时召回两张行程事实表并按需关联维度
+  # 对应失败模式：对比场景仅召回单表、遗漏其中一类业务数据、维度表重复关联错误
+  - section: "三、双事实表联合对比跨表层"
+    question: "2026年3月黄车和绿车的总订单量分别是多少？"
+    expected_tables: [yellow_tripdata, green_tripdata]
+    note: "双表横向对比；验证不会只召回其中一张行程表"
+    expected_sql: |
+      SELECT 'yellow' AS vehicle, COUNT(*) AS march_orders
+      FROM yellow_tripdata
+      WHERE date_trunc('month', tpep_pickup_datetime) = DATE '2026-03-01'
+      UNION ALL
+      SELECT 'green', COUNT(*)
+      FROM green_tripdata
+      WHERE date_trunc('month', lpep_pickup_datetime) = DATE '2026-03-01'
+    expected_result:
+      columns: ["vehicle", "march_orders"]
+      rowcount: 2
+      rows:
+        - ["yellow", 3952432]
+        - ["green", 44199]
+    result_tolerance: exact
+
+  - section: "三、双事实表联合对比跨表层"
+    question: "各个行政区的黄车与绿车订单量分别是多少？"
+    expected_tables: [yellow_tripdata, green_tripdata, taxi_zones]
+    note: "双事实表+共享维度表；需两张行程表分别关联taxi_zones后聚合对比"
+    expected_sql: |
+      SELECT z.borough,
+             SUM(CASE WHEN v.vehicle = 'yellow' THEN v.cnt ELSE 0 END) AS yellow_orders,
+             SUM(CASE WHEN v.vehicle = 'green'  THEN v.cnt ELSE 0 END) AS green_orders
+      FROM (
+        SELECT 'yellow' AS vehicle, t.pulocationid AS lid, COUNT(*) AS cnt
+        FROM yellow_tripdata t GROUP BY t.pulocationid
+        UNION ALL
+        SELECT 'green', g.pulocationid, COUNT(*)
+        FROM green_tripdata g GROUP BY g.pulocationid
+      ) v
+      JOIN taxi_zones z ON v.lid = z.locationid
+      GROUP BY z.borough
+      ORDER BY z.borough
+    expected_result:
+      columns: ["borough", "yellow_orders", "green_orders"]
+      rowcount: 8
+      rows:
+        - ["Bronx", 39925, 932]
+        - ["Brooklyn", 160128, 7502]
+        - ["EWR", 527, 0]
+        - ["Manhattan", 3391948, 25640]
+        - ["Queens", 353174, 9973]
+        - ["Staten Island", 500, 21]
+        - ["Unknown", 4624, 99]
+        - [null, 1625, 41]
+    result_tolerance: exact
+
+  - section: "三、双事实表联合对比跨表层"
+    question: "曼哈顿区早高峰（7-9点），黄车和绿车哪个平均车费更高？"
+    expected_tables: [yellow_tripdata, green_tripdata, taxi_zones]
+    note: "区域限定+时间维度+双表对比；需同时识别区域关联、时间提取、双表召回"
+    note2: "对比类问题（哪个更高/更低）的口径为输出双方数值的比较表；top-1 单行不构成完整答案。"
+    expected_sql: |
+      SELECT 'yellow' AS vehicle, AVG(t.fare_amount) AS avg_fare
+      FROM yellow_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      WHERE z.borough = 'Manhattan'
+        AND EXTRACT(HOUR FROM t.tpep_pickup_datetime) >= 7
+        AND EXTRACT(HOUR FROM t.tpep_pickup_datetime) < 9
+      UNION ALL
+      SELECT 'green', AVG(g.fare_amount)
+      FROM green_tripdata g
+      JOIN taxi_zones z ON g.pulocationid = z.locationid
+      WHERE z.borough = 'Manhattan'
+        AND EXTRACT(HOUR FROM g.lpep_pickup_datetime) >= 7
+        AND EXTRACT(HOUR FROM g.lpep_pickup_datetime) < 9
+    expected_result:
+      columns: ["vehicle", "avg_fare"]
+      rowcount: 2
+      rows:
+        - ["yellow", 18.544088160309773]
+        - ["green", 14.6882245271507]
+    result_tolerance: float_rel_1e_4
+
+  - section: "三、双事实表联合对比跨表层"
+    question: "全市范围内，黄车和绿车的平均小费率分别是多少？"
+    expected_tables: [yellow_tripdata, green_tripdata]
+    note: "双表业务指标对比；小费率=tip_amount/fare_amount，现金单均为0，业务逻辑一致"
+    expected_sql: |
+      SELECT 'yellow' AS vehicle,
+             AVG(t.tip_amount / NULLIF(t.fare_amount, 0)) AS avg_tip_rate
+      FROM yellow_tripdata t
+      WHERE t.payment_type = 1
+      UNION ALL
+      SELECT 'green', AVG(g.tip_amount / NULLIF(g.fare_amount, 0))
+      FROM green_tripdata g
+      WHERE g.payment_type = 1
+    expected_result:
+      columns: ["vehicle", "avg_tip_rate"]
+      rowcount: 2
+      rows:
+        - ["yellow", 0.25148572735032454]
+        - ["green", 0.2785388421273189]
+    result_tolerance: float_rel_1e_4
+
+  - section: "三、双事实表联合对比跨表层"
+    question: "布鲁克林上客、曼哈顿下客的订单中，黄车和绿车各有多少单？"
+    expected_tables: [yellow_tripdata, green_tripdata, taxi_zones]
+    note: "起终点双维度+双表对比；需两次关联维度表，且覆盖两张行程表"
+    expected_sql: |
+      SELECT 'yellow' AS vehicle, COUNT(*) AS order_count
+      FROM yellow_tripdata t
+      JOIN taxi_zones pu ON t.pulocationid = pu.locationid
+      JOIN taxi_zones dz ON t.dolocationid = dz.locationid
+      WHERE pu.borough = 'Brooklyn' AND dz.borough = 'Manhattan'
+      UNION ALL
+      SELECT 'green', COUNT(*)
+      FROM green_tripdata g
+      JOIN taxi_zones pu ON g.pulocationid = pu.locationid
+      JOIN taxi_zones dz ON g.dolocationid = dz.locationid
+      WHERE pu.borough = 'Brooklyn' AND dz.borough = 'Manhattan'
+    expected_result:
+      columns: ["vehicle", "order_count"]
+      rowcount: 2
+      rows:
+        - ["yellow", 49906]
+        - ["green", 1252]
+    result_tolerance: exact
+
+  # ============== 四、干扰型跨表层（抗混淆校验） ==============
+  # 设计目的：在干扰关键词、模糊描述下，验证召回表的准确性
+  # 对应失败模式：关键词优先于业务主体、漏召/多召表、维度表遗漏
+  - section: "四、干扰型跨表层"
+    question: "每个区域的总订单量（含黄车和绿车）是多少？"
+    expected_tables: [yellow_tripdata, green_tripdata, taxi_zones]
+    note: "「总订单量」易误导仅召回单表；需双行程表累加后再关联区域维度"
+    expected_sql: |
+      SELECT z.zone, SUM(v.cnt) AS total_orders
+      FROM (
+        SELECT t.pulocationid AS lid, COUNT(*) AS cnt
+        FROM yellow_tripdata t GROUP BY t.pulocationid
+        UNION ALL
+        SELECT g.pulocationid, COUNT(*)
+        FROM green_tripdata g GROUP BY g.pulocationid
+      ) v
+      JOIN taxi_zones z ON v.lid = z.locationid
+      GROUP BY z.zone
+      ORDER BY total_orders DESC
+    expected_result:
+      columns: ["zone", "total_orders"]
+      rowcount: 260
+      rows:
+        - ["Upper East Side South", 174422]
+        - ["Midtown Center", 165362]
+        - ["Upper East Side North", 157595]
+        - ["JFK Airport", 153802]
+        - ["Midtown East", 121956]
+        - ["Penn Station/Madison Sq West", 121238]
+        - ["Times Sq/Theatre District", 114696]
+        - ["Lincoln Square East", 111883]
+        - ["East Village", 104046]
+        - ["Union Sq", 103032]
+        - ["Murray Hill", 102806]
+        - ["Upper West Side South", 101299]
+        - ["East Chelsea", 98079]
+        - ["Midtown North", 98076]
+        - ["LaGuardia Airport", 96079]
+        - ["Clinton East", 88457]
+        - ["Lenox Hill West", 88371]
+        - ["West Village", 86332]
+        - ["Lenox Hill East", 81165]
+        - ["Midtown South", 79017]
+        - ["Yorkville West", 74593]
+        - ["Gramercy", 74254]
+        - ["Upper West Side North", 73716]
+        - ["West Chelsea/Hudson Yards", 69234]
+        - ["Sutton Place/Turtle Bay North", 61882]
+        - ["Flatiron", 59755]
+        - ["Greenwich Village South", 57524]
+        - ["Yorkville East", 56160]
+        - ["Greenwich Village North", 56156]
+        - ["TriBeCa/Civic Center", 53645]
+        - ["Garment District", 50751]
+        - ["Lower East Side", 50699]
+        - ["Kips Bay", 47829]
+        - ["Central Park", 47282]
+        - ["Lincoln Square West", 46257]
+        - ["Little Italy/NoLiTa", 42345]
+        - ["UN/Turtle Bay South", 41581]
+        - ["East Harlem South", 38443]
+        - ["Meatpacking/West Village West", 37347]
+        - ["Manhattan Valley", 32098]
+        - ["SoHo", 31104]
+        - ["East Harlem North", 27879]
+        - ["Morningside Heights", 27591]
+        - ["Clinton West", 25585]
+        - ["Financial District North", 25454]
+        - ["Battery Park City", 24138]
+        - ["Central Harlem", 21627]
+        - ["Hudson Sq", 18567]
+        - ["World Trade Center", 16811]
+        - ["Central Harlem North", 15939]
+        - ["Alphabet City", 15613]
+        - ["Financial District South", 14113]
+        - ["Bloomingdale", 12204]
+        - ["Two Bridges/Seward Park", 11503]
+        - ["Washington Heights South", 11040]
+        - ["Williamsburg (North Side)", 9627]
+        - ["Stuy Town/Peter Cooper Village", 9517]
+        - ["Long Island City/Hunters Point", 9266]
+        - ["Astoria", 9093]
+        - ["Hamilton Heights", 9025]
+        - ["Chinatown", 8577]
+        - ["East Elmhurst", 8299]
+        - ["Crown Heights North", 7818]
+        - ["Seaport", 7721]
+        - ["Fort Greene", 7503]
+        - ["Sunnyside", 7265]
+        - ["Williamsburg (South Side)", 6678]
+        - ["Bushwick South", 6655]
+        - ["Downtown Brooklyn/MetroTech", 6499]
+        - ["East New York", 6329]
+        - ["Greenpoint", 6305]
+        - ["Manhattanville", 5720]
+        - ["East Williamsburg", 5655]
+        - ["Brooklyn Heights", 5351]
+        - ["Boerum Hill", 5154]
+        - ["Jackson Heights", 5140]
+        - ["Stuyvesant Heights", 5063]
+        - ["Jamaica", 5040]
+        - ["Park Slope", 4983]
+        - ["DUMBO/Vinegar Hill", 4868]
+        - ["Prospect-Lefferts Gardens", 4842]
+        - [null, 4723]
+        - ["Forest Hills", 4709]
+        - ["Bedford", 4497]
+        - ["Elmhurst", 4485]
+        - ["Flatbush/Ditmas Park", 4471]
+        - ["Long Island City/Queens Plaza", 4466]
+        - ["Washington Heights North", 4236]
+        - ["Clinton Hill", 4147]
+        - ["Canarsie", 4002]
+        - ["Bushwick North", 3784]
+        - ["Brownsville", 3596]
+        - ["South Ozone Park", 3255]
+        - ["Steinway", 3165]
+        - ["Ocean Hill", 3151]
+        - ["Queensbridge/Ravenswood", 3109]
+        - ["Mott Haven/Port Morris", 3097]
+        - ["Old Astoria", 3034]
+        - ["East Flatbush/Remsen Village", 3022]
+        - ["Woodside", 2969]
+        - ["Flatlands", 2868]
+        - ["East Flatbush/Farragut", 2772]
+        - ["Richmond Hill", 2314]
+        - ["Crown Heights South", 2239]
+        - ["Baisley Park", 2131]
+        - ["Ridgewood", 2102]
+        - ["Maspeth", 2017]
+        - ["Prospect Heights", 2010]
+        - ["East Concourse/Concourse Village", 1996]
+        - ["Inwood", 1918]
+        - ["Melrose South", 1885]
+        - ["Sunset Park West", 1873]
+        - ["Soundview/Castle Hill", 1860]
+        - ["West Concourse", 1851]
+        - ["Bay Ridge", 1842]
+        - ["Coney Island", 1829]
+        - ["Erasmus", 1762]
+        - ["Red Hook", 1741]
+        - ["Flushing", 1700]
+        - ["South Jamaica", 1684]
+        - ["Co-Op City", 1669]
+        - ["Outside of NYC", 1666]
+        - ["East New York/Pennsylvania Avenue", 1642]
+        - ["Cypress Hills", 1578]
+        - ["Saint Albans", 1552]
+        - ["Williamsbridge/Olinville", 1548]
+        - ["Parkchester", 1524]
+        - ["Cobble Hill", 1478]
+        - ["University Heights/Morris Heights", 1477]
+        - ["Carroll Gardens", 1454]
+        - ["Kew Gardens", 1438]
+        - ["Elmhurst/Maspeth", 1423]
+        - ["Far Rockaway", 1379]
+        - ["Morrisania/Melrose", 1364]
+        - ["Starrett City", 1349]
+        - ["East Tremont", 1314]
+        - ["Marine Park/Mill Basin", 1288]
+        - ["Midwood", 1262]
+        - ["Rego Park", 1257]
+        - ["Hammels/Arverne", 1234]
+        - ["Corona", 1214]
+        - ["Springfield Gardens North", 1209]
+        - ["Sheepshead Bay", 1207]
+        - ["Woodhaven", 1201]
+        - ["Mount Hope", 1194]
+        - ["Borough Park", 1192]
+        - ["Queens Village", 1159]
+        - ["Briarwood/Jamaica Hills", 1128]
+        - ["Gowanus", 1106]
+        - ["Highbridge", 1091]
+        - ["Bedford Park", 1074]
+        - ["Homecrest", 1024]
+        - ["Springfield Gardens South", 1023]
+        - ["Brooklyn Navy Yard", 1016]
+        - ["Kensington", 1006]
+        - ["Norwood", 1000]
+        - ["Van Nest/Morris Park", 994]
+        - ["Van Cortlandt Village", 983]
+        - ["Claremont/Bathgate", 958]
+        - ["Woodlawn/Wakefield", 954]
+        - ["West Farms/Bronx River", 953]
+        - ["Spuyten Duyvil/Kingsbridge", 940]
+        - ["Battery Park", 915]
+        - ["Soundview/Bruckner", 906]
+        - ["Westchester Village/Unionport", 880]
+        - ["Hillcrest/Pomonok", 876]
+        - ["South Williamsburg", 870]
+        - ["Hunts Point", 858]
+        - ["Eastchester", 856]
+        - ["Crotona Park East", 826]
+        - ["Sunset Park East", 814]
+        - ["Bensonhurst West", 810]
+        - ["Kingsbridge Heights", 791]
+        - ["Bronxdale", 763]
+        - ["Brighton Beach", 761]
+        - ["Middle Village", 732]
+        - ["Schuylerville/Edgewater Park", 728]
+        - ["Pelham Parkway", 720]
+        - ["Flushing Meadows-Corona Park", 719]
+        - ["Jamaica Estates", 711]
+        - ["Longwood", 705]
+        - ["Kew Gardens Hills", 682]
+        - ["North Corona", 677]
+        - ["Howard Beach", 675]
+        - ["Glendale", 662]
+        - ["Madison", 650]
+        - ["Roosevelt Island", 645]
+        - ["Bensonhurst East", 643]
+        - ["Laurelton", 640]
+        - ["Windsor Terrace", 639]
+        - ["Gravesend", 617]
+        - ["Rosedale", 576]
+        - ["Hollis", 567]
+        - ["Fordham South", 564]
+        - ["Belmont", 554]
+        - ["Riverdale/North Riverdale/Fieldston", 528]
+        - ["Newark Airport", 527]
+        - ["Allerton/Pelham Gardens", 513]
+        - ["Ozone Park", 489]
+        - ["Cambria Heights", 433]
+        - ["College Point", 430]
+        - ["Manhattan Beach", 412]
+        - ["Dyker Heights", 408]
+        - ["Bellerose", 405]
+        - ["Columbia Street", 388]
+        - ["Pelham Bay", 380]
+        - ["Bath Beach", 351]
+        - ["Queensboro Hill", 346]
+        - ["Murray Hill-Queens", 345]
+        - ["Ocean Parkway South", 344]
+        - ["Prospect Park", 326]
+        - ["Glen Oaks", 325]
+        - ["Rockaway Park", 319]
+        - ["Bayside", 319]
+        - ["Whitestone", 318]
+        - ["Marble Hill", 283]
+        - ["Fresh Meadows", 264]
+        - ["Saint Michaels Cemetery/Woodside", 224]
+        - ["Oakland Gardens", 221]
+        - ["Auburndale", 204]
+        - ["Inwood Hill Park", 193]
+        - ["Randalls Island", 185]
+        - ["Bay Terrace/Fort Totten", 182]
+        - ["Van Cortlandt Park", 174]
+        - ["Douglaston", 155]
+        - ["East Flushing", 140]
+        - ["Bronx Park", 129]
+        - ["Highbridge Park", 102]
+        - ["Arrochar/Fort Wadsworth", 89]
+        - ["South Beach/Dongan Hills", 88]
+        - ["Country Club", 83]
+        - ["City Island", 83]
+        - ["Forest Park/Highland Park", 69]
+        - ["Stapleton", 65]
+        - ["Marine Park/Floyd Bennett Field", 55]
+        - ["Pelham Bay Park", 48]
+        - ["Bloomfield/Emerson Hill", 47]
+        - ["Saint George/New Brighton", 42]
+        - ["Crotona Park", 41]
+        - ["New Dorp/Midland Beach", 39]
+        - ["Astoria Park", 35]
+        - ["Grymes Hill/Clifton", 28]
+        - ["Willets Point", 22]
+        - ["Heartland Village/Todt Hill", 22]
+        - ["Westerleigh", 18]
+        - ["Broad Channel", 18]
+        - ["Great Kills", 17]
+        - ["Oakwood", 16]
+        - ["Breezy Point/Fort Tilden/Riis Beach", 15]
+        - ["Mariners Harbor", 14]
+        - ["Jamaica Bay", 11]
+        - ["Port Richmond", 10]
+        - ["West Brighton", 7]
+        - ["Eltingville/Annadale/Prince's Bay", 7]
+        - ["Green-Wood Cemetery", 4]
+        - ["Rossville/Woodrow", 4]
+        - ["Freshkills Park", 3]
+        - ["Charleston/Tottenville", 3]
+        - ["Arden Heights", 2]
+        - ["Rikers Island", 1]
+    result_tolerance: exact
+
+  - section: "四、干扰型跨表层"
+    question: "所有收取拥堵附加费的订单，主要分布在哪些行政区？"
+    expected_tables: [yellow_tripdata, green_tripdata, taxi_zones]
+    note: "congestion_surcharge为两表共有字段；「所有订单」需覆盖双表，同时关联区域维度"
+    expected_sql: |
+      SELECT z.borough, COUNT(*) AS order_count
+      FROM (
+        SELECT t.pulocationid AS lid FROM yellow_tripdata t
+        WHERE t.congestion_surcharge > 0
+        UNION ALL
+        SELECT g.pulocationid FROM green_tripdata g
+        WHERE g.congestion_surcharge > 0
+      ) v
+      JOIN taxi_zones z ON v.lid = z.locationid
+      GROUP BY z.borough
+      ORDER BY order_count DESC
+    expected_result:
+      columns: ["borough", "order_count"]
+      rowcount: 7
+      rows:
+        - ["Manhattan", 2511927]
+        - ["Queens", 139590]
+        - ["Brooklyn", 4408]
+        - ["Unknown", 3548]
+        - ["Bronx", 134]
+        - [null, 63]
+        - ["Staten Island", 3]
+    result_tolerance: exact
+
+  - section: "四、干扰型跨表层"
+    question: "机场接送订单里，绿车的平均电召费是多少？"
+    expected_tables: [green_tripdata, taxi_zones]
+    note: "「机场接送」易触发黄车Airport_fee字段联想；但主体是绿车+电召费，仅需召回绿车+维度表"
+    expected_sql: |
+      SELECT AVG(t.ehail_fee) AS avg_ehail_fee
+      FROM green_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      WHERE z.service_zone = 'Airports'
+    expected_result:
+      columns: ["avg_ehail_fee"]
+      rowcount: 1
+      rows:
+        - [null]
+    result_tolerance: exact
+
+  - section: "四、干扰型跨表层"
+    question: "支付类型为现金的订单，平均行程距离最短的是哪个行政区？"
+    expected_tables: [yellow_tripdata, green_tripdata, taxi_zones]
+    note: "支付类型为双表共有字段；未限定车型时需覆盖双表，同时关联区域维度排序"
+    expected_sql: |
+      SELECT z.borough, AVG(v.trip_distance) AS avg_trip_distance
+      FROM (
+        SELECT t.pulocationid AS lid, t.trip_distance FROM yellow_tripdata t
+        WHERE t.payment_type = 2
+        UNION ALL
+        SELECT g.pulocationid, g.trip_distance FROM green_tripdata g
+        WHERE g.payment_type = 2
+      ) v
+      JOIN taxi_zones z ON v.lid = z.locationid
+      GROUP BY z.borough
+      ORDER BY avg_trip_distance ASC
+      LIMIT 1
+    expected_result:
+      columns: ["borough", "avg_trip_distance"]
+      rowcount: 1
+      rows:
+        - ["EWR", 0.1637142857142857]
+    result_tolerance: float_rel_1e_4
+
+  # ============== 五、隐含业务规则+跨表层 ==============
+  # 设计目的：结合脏数据过滤、业务编码规则，同时验证表主体识别与维度关联
+  # 对应失败模式：只识别过滤逻辑，忽略表主体或维度关联
+  - section: "五、隐含业务规则+跨表层"
+    question: "2026年3月曼哈顿的有效绿车订单平均车费是多少？"
+    expected_tables: [green_tripdata, taxi_zones]
+    note: "隐含零行程、负金额脏数据过滤；同时「曼哈顿」需关联区域维度表"
+    expected_sql: |
+      SELECT AVG(t.fare_amount) AS avg_fare
+      FROM green_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      WHERE z.borough = 'Manhattan'
+        AND date_trunc('month', t.lpep_pickup_datetime) = DATE '2026-03-01'
+        AND t.trip_distance > 0
+        AND t.fare_amount > 0
+    expected_result:
+      columns: ["avg_fare"]
+      rowcount: 1
+      rows:
+        - [15.16388061489312]
+    result_tolerance: float_rel_1e_4
+
+  - section: "五、隐含业务规则+跨表层"
+    question: "有小费的订单中，各个行政区黄车和绿车的单量占比分别是多少？"
+    expected_tables: [yellow_tripdata, green_tripdata, taxi_zones]
+    note: "隐含tip_amount>0过滤；需双表分别过滤后关联维度，再计算占比"
+    expected_sql: |
+      SELECT z.borough, v.vehicle,
+             COUNT(*) AS order_count,
+             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY z.borough), 2) AS pct_in_borough
+      FROM (
+        SELECT 'yellow' AS vehicle, t.pulocationid AS lid
+        FROM yellow_tripdata t WHERE t.tip_amount > 0
+        UNION ALL
+        SELECT 'green', g.pulocationid
+        FROM green_tripdata g WHERE g.tip_amount > 0
+      ) v
+      JOIN taxi_zones z ON v.lid = z.locationid
+      GROUP BY z.borough, v.vehicle
+      ORDER BY z.borough, v.vehicle
+    expected_result:
+      columns: ["borough", "vehicle", "order_count", "pct_in_borough"]
+      rowcount: 15
+      rows:
+        - ["Bronx", "green", 79, 11.32]
+        - ["Bronx", "yellow", 619, 88.68]
+        - ["Brooklyn", "green", 3920, 20.8]
+        - ["Brooklyn", "yellow", 14923, 79.2]
+        - ["EWR", "yellow", 302, 100.0]
+        - ["Manhattan", "green", 17795, 0.8]
+        - ["Manhattan", "yellow", 2219154, 99.2]
+        - ["Queens", "green", 5126, 2.47]
+        - ["Queens", "yellow", 202387, 97.53]
+        - ["Staten Island", "green", 11, 25.58]
+        - ["Staten Island", "yellow", 32, 74.42]
+        - ["Unknown", "green", 49, 1.38]
+        - ["Unknown", "yellow", 3490, 98.62]
+        - [null, "green", 10, 1.2]
+        - [null, "yellow", 820, 98.8]
+    result_tolerance: float_rel_1e_4
+
+  - section: "五、隐含业务规则+跨表层"
+    question: "正常费率下，工作日晚高峰（17-19点）哪个区的绿车订单量最高？"
+    expected_tables: [green_tripdata, taxi_zones]
+    note: "隐含RatecodeID=1正常费率过滤、工作日/小时时间提取；同时关联区域维度排序"
+    expected_sql: |
+      SELECT z.borough, COUNT(*) AS order_count
+      FROM green_tripdata t
+      JOIN taxi_zones z ON t.pulocationid = z.locationid
+      WHERE t.ratecodeid = 1
+        AND EXTRACT(ISODOW FROM t.lpep_pickup_datetime) < 6
+        AND EXTRACT(HOUR FROM t.lpep_pickup_datetime) >= 17
+        AND EXTRACT(HOUR FROM t.lpep_pickup_datetime) < 19
+      GROUP BY z.borough
+      ORDER BY order_count DESC
+      LIMIT 1
+    expected_result:
+      columns: ["borough", "order_count"]
+      rowcount: 1
+      rows:
+        - ["Manhattan", 2756]
+    result_tolerance: exact

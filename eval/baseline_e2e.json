@@ -1,0 +1,236 @@
+{
+  "generated_at": "2026-09-19T09:56:21+00:00",
+  "model": "GLM-5.3-Flash",
+  "channels_used": [
+    "bm25",
+    "vector"
+  ],
+  "layer_metrics": {
+    "l1_recall3_avg": 1.0,
+    "l2_pass_rate": 0.95,
+    "l3_pass_rate": 0.75,
+    "l3_pass_of_total": 0.75
+  },
+  "cases": [
+    {
+      "index": 1,
+      "question": "2026年3月黄色出租车的总订单量是多少？",
+      "section": "一、单表精准区分层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT COUNT(*) AS total_orders FROM yellow_tripdata WHERE tpep_pickup_datetime >= CAST('2026-03-01 00:00:00' AS TIMESTAMP) AND tpep_pickup_datetime < CAST('2026-04-01 00:00:00' AS TIMESTAMP) LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 2,
+      "question": "绿色出租车的平均行程距离是多少英里？",
+      "section": "一、单表精准区分层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT AVG(trip_distance) AS avg_trip_distance_miles FROM green_tripdata LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 3,
+      "question": "所有订单的电召费总收入是多少？",
+      "section": "一、单表精准区分层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "2/3",
+      "sql": "SELECT SUM(ehail_fee) AS total_ehail_fee FROM green_tripdata LIMIT 500",
+      "reason": "第 1 行单元格类型不一致:2 vs 0"
+    },
+    {
+      "index": 4,
+      "question": "信用卡支付的订单占比是多少？",
+      "section": "一、单表精准区分层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT AVG(CASE WHEN payment_type = 1 THEN 1.0 ELSE 0 END) AS credit_card_ratio FROM (SELECT payment_type FROM yellow_tripdata UNION ALL SELECT payment_type FROM green_tripdata) AS t LIMIT 500",
+      "reason": "unit_equivalent:数值经 x100//100 单位换算后等价"
+    },
+    {
+      "index": 5,
+      "question": "曼哈顿区黄色出租车的上客订单量有多少？",
+      "section": "二、单事实表+维度表 标准跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT COUNT(*) AS order_count FROM yellow_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid WHERE z.borough = 'Manhattan' LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 6,
+      "question": "布鲁克林区绿色出租车的平均总车费是多少？",
+      "section": "二、单事实表+维度表 标准跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT AVG(t.total_amount) AS avg_total_fare FROM green_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid WHERE z.borough = 'Brooklyn' LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 7,
+      "question": "肯尼迪机场上客的绿车订单中，街招单和网约单各占多少？",
+      "section": "二、单事实表+维度表 标准跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "fail",
+      "confidence": "0/3",
+      "sql": "SELECT COUNT(*) AS total_orders, SUM(CASE WHEN trip_type = 1 THEN 1 ELSE 0 END) AS street_hail_orders, ROUND(SUM(CASE WHEN trip_type = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS street_hail_pct, SUM(CASE WHEN trip_type = 2 THEN 1 ELSE 0 END) AS dispatch_orders, ROUND(SUM(CASE WHEN trip_type = 2 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS dispatch_pct FROM green_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid WHERE z.zone = 'JFK Airport' LIMIT 500",
+      "reason": "行数不一致:实际 1 vs 期望 3"
+    },
+    {
+      "index": 8,
+      "question": "上客量最高的5个区域中，黄车订单量分别是多少？",
+      "section": "二、单事实表+维度表 标准跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "2/3",
+      "sql": "SELECT z.zone, COUNT(*) AS order_count FROM yellow_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid GROUP BY z.zone ORDER BY order_count DESC LIMIT 5",
+      "reason": "第 1 行列数不一致"
+    },
+    {
+      "index": 9,
+      "question": "2026年3月黄车和绿车的总订单量分别是多少？",
+      "section": "三、双事实表联合对比跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "2/3",
+      "sql": "SELECT taxi_type, COUNT(*) AS order_count FROM (SELECT '黄车' AS taxi_type, tpep_pickup_datetime AS pickup_time FROM yellow_tripdata UNION ALL SELECT '绿车' AS taxi_type, lpep_pickup_datetime AS pickup_time FROM green_tripdata) AS t WHERE pickup_time >= CAST('2026-03-01' AS TIMESTAMP) AND pickup_time < CAST('2026-04-01' AS TIMESTAMP) GROUP BY taxi_type LIMIT 500",
+      "reason": "行数不一致:实际 1 vs 期望 2"
+    },
+    {
+      "index": 10,
+      "question": "各个行政区的黄车与绿车订单量分别是多少？",
+      "section": "三、双事实表联合对比跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "fail",
+      "confidence": "0/3",
+      "sql": "SELECT z.borough, v.vehicle_type, COUNT(*) AS order_count FROM (SELECT pulocationid, 'yellow' AS vehicle_type FROM yellow_tripdata UNION ALL SELECT pulocationid, 'green' AS vehicle_type FROM green_tripdata) AS v JOIN taxi_zones AS z ON v.pulocationid = z.locationid GROUP BY z.borough, v.vehicle_type ORDER BY z.borough, v.vehicle_type LIMIT 500",
+      "reason": "行数不一致:实际 15 vs 期望 8"
+    },
+    {
+      "index": 11,
+      "question": "曼哈顿区早高峰（7-9点），黄车和绿车哪个平均车费更高？",
+      "section": "三、双事实表联合对比跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "fail",
+      "confidence": "0/3",
+      "sql": "SELECT cab_type, AVG(fare_amount) AS avg_fare FROM (SELECT 'yellow' AS cab_type, y.fare_amount FROM yellow_tripdata AS y JOIN taxi_zones AS zy ON y.pulocationid = zy.locationid WHERE zy.borough = 'Manhattan' AND EXTRACT(HOUR FROM y.tpep_pickup_datetime) >= 7 AND EXTRACT(HOUR FROM y.tpep_pickup_datetime) < 9 UNION ALL SELECT 'green' AS cab_type, g.fare_amount FROM green_tripdata AS g JOIN taxi_zones AS zg ON g.pulocationid = zg.locationid WHERE zg.borough = 'Manhattan' AND EXTRACT(HOUR FROM g.lpep_pickup_datetime) >= 7 AND EXTRACT(HOUR FROM g.lpep_pickup_datetime) < 9) AS u GROUP BY cab_type ORDER BY avg_fare DESC LIMIT 1",
+      "reason": "行数不一致:实际 1 vs 期望 2"
+    },
+    {
+      "index": 12,
+      "question": "全市范围内，黄车和绿车的平均小费率分别是多少？",
+      "section": "三、双事实表联合对比跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT 'yellow' AS taxi_type, AVG(tip_amount / NULLIF(fare_amount, 0)) AS avg_tip_rate FROM yellow_tripdata WHERE payment_type = 1 UNION ALL SELECT 'green' AS taxi_type, AVG(tip_amount / NULLIF(fare_amount, 0)) AS avg_tip_rate FROM green_tripdata WHERE payment_type = 1 LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 13,
+      "question": "布鲁克林上客、曼哈顿下客的订单中，黄车和绿车各有多少单？",
+      "section": "三、双事实表联合对比跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT car_type, COUNT(*) AS order_count FROM (SELECT '黄车' AS car_type FROM yellow_tripdata AS t JOIN taxi_zones AS pz ON t.pulocationid = pz.locationid JOIN taxi_zones AS dz ON t.dolocationid = dz.locationid WHERE pz.borough = 'Brooklyn' AND dz.borough = 'Manhattan' UNION ALL SELECT '绿车' AS car_type FROM green_tripdata AS g JOIN taxi_zones AS pz ON g.pulocationid = pz.locationid JOIN taxi_zones AS dz ON g.dolocationid = dz.locationid WHERE pz.borough = 'Brooklyn' AND dz.borough = 'Manhattan') AS u GROUP BY car_type ORDER BY car_type LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 14,
+      "question": "每个区域的总订单量（含黄车和绿车）是多少？",
+      "section": "四、干扰型跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "fail",
+      "confidence": "0/3",
+      "sql": "SELECT z.zone, COUNT(*) AS order_count FROM (SELECT pulocationid FROM yellow_tripdata UNION ALL SELECT pulocationid FROM green_tripdata) AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid GROUP BY z.zone ORDER BY order_count DESC LIMIT 500",
+      "reason": "第 82 行单元格类型不一致:2 vs 0"
+    },
+    {
+      "index": 15,
+      "question": "所有收取拥堵附加费的订单，主要分布在哪些行政区？",
+      "section": "四、干扰型跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT z.borough, COUNT(*) AS order_count FROM (SELECT pulocationid FROM yellow_tripdata WHERE congestion_surcharge > 0 UNION ALL SELECT pulocationid FROM green_tripdata WHERE congestion_surcharge > 0) AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid GROUP BY z.borough ORDER BY order_count DESC LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 16,
+      "question": "机场接送订单里，绿车的平均电召费是多少？",
+      "section": "四、干扰型跨表层",
+      "l1_recall3": 1.0,
+      "l2": "fail",
+      "l3": "pass",
+      "confidence": "1/1",
+      "sql": "SELECT AVG(ehail_fee) AS avg_ehail_fee FROM green_tripdata WHERE pulocationid IN (SELECT locationid FROM taxi_zones WHERE service_zone = 'Airports') OR dolocationid IN (SELECT locationid FROM taxi_zones WHERE service_zone = 'Airports') LIMIT 500",
+      "reason": "needs_clarification:green_tripdata 表中的电召费列 ehail_fee 空值率为 100%（该列在数据中没有任何取值），无法计算机场订单的平均电召费，请问是否需要改查其他费用指标（如 extra、tolls_amount 等）？"
+    },
+    {
+      "index": 17,
+      "question": "支付类型为现金的订单，平均行程距离最短的是哪个行政区？",
+      "section": "四、干扰型跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT z.borough, AVG(t.trip_distance) AS avg_trip_distance FROM (SELECT pulocationid, trip_distance FROM yellow_tripdata WHERE payment_type = 2 UNION ALL SELECT pulocationid, trip_distance FROM green_tripdata WHERE payment_type = 2) AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid GROUP BY z.borough ORDER BY avg_trip_distance ASC LIMIT 1",
+      "reason": null
+    },
+    {
+      "index": 18,
+      "question": "2026年3月曼哈顿的有效绿车订单平均车费是多少？",
+      "section": "五、隐含业务规则+跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT AVG(t.fare_amount) AS avg_fare FROM green_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid WHERE z.borough = 'Manhattan' AND t.lpep_pickup_datetime >= CAST('2026-03-01' AS TIMESTAMP) AND t.lpep_pickup_datetime < CAST('2026-04-01' AS TIMESTAMP) AND t.trip_distance > 0 AND t.fare_amount > 0 LIMIT 500",
+      "reason": null
+    },
+    {
+      "index": 19,
+      "question": "有小费的订单中，各个行政区黄车和绿车的单量占比分别是多少？",
+      "section": "五、隐含业务规则+跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "fail",
+      "confidence": "1/3",
+      "sql": "WITH tipped AS (SELECT z.borough AS borough, 'yellow' AS cab_type FROM yellow_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid WHERE t.tip_amount > 0 UNION ALL SELECT z.borough AS borough, 'green' AS cab_type FROM green_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid WHERE t.tip_amount > 0) SELECT borough, cab_type, COUNT(*) AS order_count, COUNT(*) * 1.0 / SUM(COUNT(*)) OVER (PARTITION BY borough) AS ratio FROM tipped GROUP BY borough, cab_type ORDER BY borough, cab_type LIMIT 500",
+      "reason": "第 1 行数值不一致:0.11318051575931232 vs 11.32"
+    },
+    {
+      "index": 20,
+      "question": "正常费率下，工作日晚高峰（17-19点）哪个区的绿车订单量最高？",
+      "section": "五、隐含业务规则+跨表层",
+      "l1_recall3": 1.0,
+      "l2": "pass",
+      "l3": "pass",
+      "confidence": "3/3",
+      "sql": "SELECT z.borough, COUNT(*) AS order_count FROM green_tripdata AS t JOIN taxi_zones AS z ON t.pulocationid = z.locationid WHERE t.ratecodeid = 1 AND EXTRACT(ISODOW FROM t.lpep_pickup_datetime) < 6 AND EXTRACT(HOUR FROM t.lpep_pickup_datetime) >= 17 AND EXTRACT(HOUR FROM t.lpep_pickup_datetime) < 19 GROUP BY z.borough ORDER BY order_count DESC LIMIT 1",
+      "reason": null
+    }
+  ]
+}
