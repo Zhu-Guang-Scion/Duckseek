@@ -40,6 +40,7 @@
 | 6 | 交互形态 | CLI 优先（Typer + Rich）；Web UI / MCP 推迟到阶段三 | 锁定 |
 | 7 | 测试与质量 | pytest（覆盖率 ≥85%）+ ruff 零告警，是每个任务的完成前提 | 锁定 |
 | 8 | Embedding 接入 | 仅 OpenAI 兼容 API：环境变量 EMB_BASE_URL / EMB_API_KEY / EMB_MODEL 配置；embedding 结果落本地磁盘缓存避免重复调用；不引入本地 embedding 模型 | 锁定 |
+| 9 | 对外封装 | 仅经 MCP tools + SKILL.md；tools 面最小化（status / list_tables / ask），密钥只走环境变量，任何 tool 参数与返回值不得携带密钥值 | 锁定 |
 
 > 注：早期讨论中的"Provider 抽象层 + Ollama 可切换"方案已被决策 3 取代，不再有效。
 
@@ -73,6 +74,11 @@
 - golden.yaml 评测集（≥10 条真实问答）+ 回归 runner + docs/architecture.md
 - 完成判据：改提示词后一键回归，指标可对比
 
+
+
+**里程碑 5：MCP + Skill 封装** —— 状态：🟡 进行中（独立小里程碑，不改变阶段划分）
+- MCP Server（tools：status / list_tables / ask）—— 🟢（T17，mcp 2.2 stdio）；SKILL.md 封装 —— ⚪ 待任务书
+- 完成判据：AI 宿主可显式调用 nl2data 完成接入到问答全流程；缺失配置时由宿主 LLM 向用户索要；密钥零出现在 tool 参数/返回值（专项测试）
 ### 阶段二：准确率工程（MVP 验收后启动）
 多候选 SQL + 选择器、实体索引、Python 分析沙箱、查询缓存。
 
@@ -149,3 +155,5 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-19 T16 完成：docs/architecture.md（开源 README 母体，七节骨架：简介/架构图/八决策+契约引用/快速开始五个环境变量+全流程命令/三层评测/安全模型双重防线+红队制度/开发指南；中文先行，英文 README 入 §7 待办；goals.md 内部事实源 vs architecture.md 对外叙事的引用关系文内写明）。文中全部命令在全新临时工作区逐条自验通过（ingest excel+parquet→profile→cards→index→glossary check→ask 正确回答→audit；eval 在临时库正确拒绝缺表，主库有效性有 T15/G8 证据）。待人类通读。
 - 2026-09-19 V4-A 建议处置：覆盖率门禁 80→85（决策 7 措辞与 pyproject fail_under 同步上调；实测 91.24% 有余量，人类授权顾问裁定）。
 - 2026-09-19 V4 收官：A1 三条处置（门禁 80→85 三处同步；M4 文件统一 commit「M4 收官」；章节引用核实为文档链无误）；B 受控实验（改动轮 L3 0.75→0.65 单句措辞即被感知，恢复轮 0.80 与基线差恰 1 case 且为已知摆动项）——完成判据「改提示词后一键回归，指标可对比」实证达成；C 质量门全过（85 新门禁）、里程碑 4 🟢、§7 逐项标注归属、docs/milestone-4-notes.md 封存。阶段一个人 MVP 四大里程碑全部完成。
+- 2026-09-19 M5 立项（MCP + Skill 封装）：人类希望 AI 宿主可显式调用 nl2data，调用中由宿主 LLM 向用户索要缺失配置；人类无偏好，顾问裁定批准立项。§3 新增锁定决策 9（仅经 MCP tools + SKILL.md，tools 面最小化 status/list_tables/ask，密钥只走环境变量且不得出现在任何 tool 参数与返回值）。
+- 2026-09-19 T17 MCP Server 完成：新模块 mcp_server/（决策 9 最小三工具 status/list_tables/ask，对既有模块只 import；ask 复用 ask_once(no_interpret=True)，解读留给宿主 LLM）；依赖 mcp 2.2.0（FastMCP 已更名 MCPServer，同步工具经 anyio.to_thread 卸载不阻塞事件循环）；CLI 增 `nl2data mcp serve`（stdio）；密钥纪律三处落地（status 只报 presence 布尔与缺失名、ask 异常经 _scrub 六变量值清洗、LlmError 原生脱敏），专用测试断言哨兵值零出现；注入防护按任务书不加新防线——单元级敌意模型（DELETE SQL）被既有护栏三拒、表行数不变，真实注入（"忽略之前的规则"）模型诚实反问只读约束。真实链路验证：stdio 子进程全流程（status ready=true / list_tables 三表行数 / golden #1 答案 3,952,432 与参考值一致）+ slow 测试（内存客户端 golden #1）。质量门：ruff 零告警、488 passed 覆盖 91.41%。mcpServers 配置样例见交付报告；SKILL.md 待后续任务书。

@@ -48,6 +48,12 @@ eval_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(eval_app)
+mcp_app = typer.Typer(
+    name="mcp",
+    help="MCP server for AI host integration (stdio).",
+    no_args_is_help=True,
+)
+app.add_typer(mcp_app)
 console = Console()
 
 ConfigOption = typer.Option(
@@ -646,6 +652,15 @@ def eval_e2e_cmd(
             encoding="utf-8",
         )
         console.print(f"[green]baseline saved to {BASELINE_PATH}[/green]")
+
+
+@mcp_app.command("serve")
+def mcp_serve_cmd(config_path: Path | None = ConfigOption) -> None:
+    """Serve the three read-only nl2data tools over stdio for MCP hosts."""
+    from mcp_server.server import serve
+
+    cfg = _load_cfg(config_path)
+    serve(cfg)
 
 
 def run() -> None:

@@ -36,6 +36,7 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "jieba>=0.42.1",
     "openai>=3.16.0",
+    "mcp>=2.2.0",
 ]
 
 [dependency-groups]
@@ -60,6 +61,7 @@ packages = [
     "guard",
     "exec",
     "eval",
+    "mcp_server",
 ]
 
 [tool.setuptools.package-data]
@@ -84,6 +86,7 @@ known-first-party = [
     "guard",
     "exec",
     "eval",
+    "mcp_server",
 ]
 
 [tool.pytest.ini_options]
@@ -103,6 +106,7 @@ source = [
     "guard",
     "exec",
     "eval",
+    "mcp_server",
 ]
 branch = true
 
