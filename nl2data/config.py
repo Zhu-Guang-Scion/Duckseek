@@ -126,6 +126,10 @@ class LlmConfig:
     max_retries: int = 3
     timeout_seconds: int = 60
     max_tokens: int = 4096
+    # "disabled" sends thinking={"type": "disabled"} with every chat call
+    # (Zhipu GLM extension): SQL generation is temperature-0 work where the
+    # default reasoning mode costs ~50s per ask without quality gain.
+    thinking: str = "enabled"
 
 
 @dataclass(frozen=True)
@@ -270,6 +274,15 @@ def _build_paths(section: dict[str, Any], base: Path) -> PathsConfig:
     )
 
 
+def _parse_thinking(value: Any) -> str:
+    """Normalize the ``llm.thinking`` switch; unknown values fail loudly."""
+    thinking = str(value).strip().lower()
+    if thinking not in {"enabled", "disabled"}:
+        msg = f"llm.thinking must be 'enabled' or 'disabled', got {value!r}"
+        raise ConfigError(msg)
+    return thinking
+
+
 def load_config(path: Path | None = None) -> Nl2DataConfig:
     """Load and validate the nl2data configuration.
 
@@ -363,6 +376,7 @@ def load_config(path: Path | None = None) -> Nl2DataConfig:
             max_retries=int(llm_section.get("max_retries", 3)),
             timeout_seconds=int(llm_section.get("timeout_s", 60)),
             max_tokens=int(llm_section.get("max_tokens", 4096)),
+            thinking=_parse_thinking(llm_section.get("thinking", "enabled")),
         ),
         guard=GuardConfig(
             default_limit=int(guard_section.get("default_limit", 500)),

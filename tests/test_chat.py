@@ -216,6 +216,20 @@ def test_success_basic(
     assert "response_format" not in call
 
 
+def test_thinking_disabled_adds_switch_and_default_omits_it(
+    llm_env: None, config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """llm.thinking=disabled sends the GLM switch; the default omits it."""
+    stub = _StubClient()
+    _install_stub(monkeypatch, stub)
+    stub.chat.completions.script = [_ok_response("a"), _ok_response("b")]
+    cfg_off = replace(config, llm=replace(config.llm, thinking="disabled"))
+    chat(_MESSAGES, cfg=cfg_off)
+    assert stub.chat.completions.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    chat(_MESSAGES, cfg=config)
+    assert "extra_body" not in stub.chat.completions.calls[1]
+
+
 def test_json_object_response_format_and_fenced_parse(
     llm_env: None, config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:

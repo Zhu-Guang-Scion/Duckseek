@@ -321,6 +321,10 @@ def chat(
                 "temperature": cfg.llm.temperature,
                 "max_tokens": cfg.llm.max_tokens,
             }
+            if cfg.llm.thinking == "disabled":
+                # Opt-in only: strict OpenAI-compatible servers reject unknown
+                # body fields, so the switch is sent only when configured.
+                kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
             try:

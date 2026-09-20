@@ -89,6 +89,9 @@ llm:
   max_retries: 3
   timeout_s: 60
   max_tokens: 4096
+  # disabled → 每次调用附带 thinking={"type":"disabled"}(GLM 扩展):
+  # SQL 生成是 temperature=0 的确定性任务,默认深度思考会把单次 ask 拖到 ~50s。
+  thinking: disabled
 
 # SQL guardrails (T10). Whitelisted tables/columns come from the catalog at
 # validation time, not from this file; these are the tunable thresholds.
