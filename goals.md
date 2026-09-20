@@ -115,6 +115,7 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 【阶段二】M4 提示词引导清单（G8b 风格类失败，不再动比对器）：①宽表输出引导（“分别/各”类双指标问题输出一行两列而非行式）；②NULL 分组如实输出（不把未关联 zone 的组改为数值标签）；③跨表列名纪律（green 用 lpep_*，模型曾把 tpep 用于 green 被护栏拒）。
 - M4 任务：glossary schema 支持指标级口径：term 增加 metric_filter 与 applies_to 键；T6 校验器、卡片渲染、system.md 配套；#12 为验证用例，expected_sql 两侧均含 payment_type=1。✅ 已完成（2026-09-19 T14：schema/互斥校验/跨表注入/渲染区分/规则 6 落地，#12 真实链路两侧过滤且数值与 T13 参考值逐位一致）
 
+- 【阶段二】2026-09-20 V5-D 观察：e2e 比较器在 pass case 行尾仍带出投影/单位等价判定前的中间注记（#7/#8/#17 出现「列数/数值不一致」字样但判定为 ✓）——展示层瑕疵，阶段二顺手修（渲染 pass 时丢弃比较中间态），不动判定逻辑。
 ## §8 变更规则
 
 - §1/§2/§3/§5 的修改：仅人类本人，或人类明确授权后执行，且必须写 §9 变更日志
@@ -159,3 +160,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-19 T17 MCP Server 完成：新模块 mcp_server/（决策 9 最小三工具 status/list_tables/ask，对既有模块只 import；ask 复用 ask_once(no_interpret=True)，解读留给宿主 LLM）；依赖 mcp 2.2.0（FastMCP 已更名 MCPServer，同步工具经 anyio.to_thread 卸载不阻塞事件循环）；CLI 增 `nl2data mcp serve`（stdio）；密钥纪律三处落地（status 只报 presence 布尔与缺失名、ask 异常经 _scrub 六变量值清洗、LlmError 原生脱敏），专用测试断言哨兵值零出现；注入防护按任务书不加新防线——单元级敌意模型（DELETE SQL）被既有护栏三拒、表行数不变，真实注入（"忽略之前的规则"）模型诚实反问只读约束。真实链路验证：stdio 子进程全流程（status ready=true / list_tables 三表行数 / golden #1 答案 3,952,432 与参考值一致）+ slow 测试（内存客户端 golden #1）。质量门：ruff 零告警、488 passed 覆盖 91.41%。mcpServers 配置样例见交付报告；SKILL.md 待后续任务书。
 - 2026-09-19 T18 Skill 包完成：skills/nl2data/ 三件套（SKILL.md 主文件 97 行 + config-template.sh 六变量空占位模板（变量名与 §3 决策 3/8 一致，硅基流动公开示例注释，零密钥零内部地址）+ README.md 宿主注册指南（mcpServers JSON 片段即 T17 交付样例落地版，Claude Code/Cursor/zcode 注册位置，env 块显式传六变量的说明））。SKILL.md 按 progressive disclosure：第三人称 frontmatter 触发场景、快速判断（禁绕过口径层直连 DuckDB）、四步工作流（status 诊断含缺配置固定话术与 CLI 三步命令 → list_tables → ask（needs_clarification 原样转达、新问句重发）→ 呈现附 SQL 可核验提醒）、四条纪律逐条成文、故障速查表五行。验收标准机器化为 tests/test_skill_docs.py 8 项（目录齐备/<150 行/工具引用恰为 T17 三件无悬空/四纪律关键词/工作流四步与速查三行/引用文件存在/六变量一致/全包无密钥字面量）。质量门：ruff 零告警、496 passed 覆盖 91.41%。SKILL.md 全文已随交付报告呈人类过目。
 - 2026-09-20 生成条件变更（V5-C，人类裁定通过）：联调发现 GLM-5.3-Flash 默认深度思考致 SQL 生成超 50s（宿主 30s 超时必现）；新增 llm.thinking 开关（默认 enabled 向后兼容、未知值 fail fast，仅显式 disabled 时随请求发送 thinking={"type":"disabled"}/GLM 扩展字段，严格 OpenAI 兼容端不受影响），仓库 config.yaml 置 disabled。验证：单次 ask 2m31s → 12.8s，双口径答案一致，497 passed 覆盖 91.35%、ruff 零告警。commit 4834f5d。
+- 2026-09-20 V5-D 复核裁定落地（选项 A）：thinking=disabled 下复跑 e2e——L1=1.000 / L2=0.95 / L3=0.80（+1 case 来源 #7，非 #19；逐 case diff 三处：#7 fail→pass、#11 时间列摆动 L2/L3 转 error、#16 L2 fail→pass）；冻结基线维持 0.75 不动（禁止 --save-baseline），接受 L3∈[0.75,0.80] 为 disabled 条件正常带；已知双向翻转清单扩展为 #7/#11/#16/#19（均 M4 归档边界/风格类，方向可正可负）。成本 5m24s/60 ask（均 ~5.4s）。基线文件全程未动；详见 docs/milestone-5-notes.md §1。
