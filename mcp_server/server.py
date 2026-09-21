@@ -232,6 +232,10 @@ def ask_payload(question: str, cfg: Nl2DataConfig) -> dict[str, Any]:
         "row_count": outcome.execution.rowcount,
         "elapsed_ms": elapsed_ms,
         "source_tables": outcome.retrieved_tables,
+        # Truthful per-call disclosure (T19): the vector channel counts as
+        # used only when retrieval actually listed it — absent when EMB_* is
+        # missing, the embedding call failed mid-query, or it scored no hits.
+        "embedding_degraded": "vector" not in outcome.retrieval_channels,
     }
 
 
@@ -267,10 +271,12 @@ def build_server(cfg: Nl2DataConfig) -> MCPServer:
         Runs retrieve → SQL generation → read-only guard → sandboxed
         execution. Returns ``answer`` (compact markdown of the result),
         ``sql`` (the executed statement, for verification), ``row_count``,
-        ``elapsed_ms`` and ``source_tables``; interpret the answer yourself.
-        Ambiguous questions return ``needs_clarification`` with a follow-up
-        ``question`` to ask the user. Read-only; the SQL is verified to be a
-        single SELECT before it runs.
+        ``elapsed_ms``, ``source_tables`` and ``embedding_degraded`` (true
+        when this call's retrieval fell back to BM25-only — tell the user
+        and suggest providing EMB_* for best recall); interpret the answer
+        yourself. Ambiguous questions return ``needs_clarification`` with a
+        follow-up ``question`` to ask the user. Read-only; the SQL is
+        verified to be a single SELECT before it runs.
         """
         return await anyio.to_thread.run_sync(ask_payload, question, cfg)
 

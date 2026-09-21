@@ -281,7 +281,8 @@ def test_list_tables_empty_without_catalog(tmp_path: Path) -> None:
 def test_ask_contract_shape_and_no_interpretation(
     mcp_cfg: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Successful ask returns exactly the five contract keys, no interpret call."""
+    """Successful ask returns exactly the six contract keys, no interpret call."""
+    _clear_credential_env(monkeypatch)  # deterministic BM25-only retrieval
     monkeypatch.setattr(
         "nl2data.qa.generate",
         _FakeGenerate([_ok("SELECT count(*) AS n FROM ding_dan")]),
@@ -298,14 +299,47 @@ def test_ask_contract_shape_and_no_interpretation(
         return await call_json(session, "nl2data_ask", {"question": "多少订单"})
 
     payload = drive(build_server(mcp_cfg), _calls)
-    assert set(payload) == {"answer", "sql", "row_count", "elapsed_ms", "source_tables"}
+    assert set(payload) == {
+        "answer",
+        "sql",
+        "row_count",
+        "elapsed_ms",
+        "source_tables",
+        "embedding_degraded",
+    }
     assert payload["row_count"] == 1
     assert payload["sql"].upper().startswith("SELECT COUNT(*)")
     assert payload["source_tables"] == ["ding_dan"]
     assert payload["elapsed_ms"] >= 0
+    assert payload["embedding_degraded"] is True  # EMB_* absent in this test
     assert "| n |" in payload["answer"]
     assert "4" in payload["answer"]
     assert interpret_calls == []
+
+
+def test_ask_embedding_not_degraded_when_vector_channel_used(
+    mcp_cfg: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When retrieval actually used the vector channel, degraded stays False.
+
+    Retrieval is stubbed with channels_used=["bm25", "vector"] (SimpleNamespace
+    suffices: ask_once only reads .items/.channels_used here), keeping the
+    test offline while exercising the real passthrough + payload logic.
+    """
+    from types import SimpleNamespace
+
+    fake_retrieval = SimpleNamespace(
+        items=[SimpleNamespace(table="ding_dan")],
+        channels_used=["bm25", "vector"],
+    )
+    monkeypatch.setattr("nl2data.qa.retrieve", lambda question, cfg: fake_retrieval)
+    monkeypatch.setattr(
+        "nl2data.qa.generate",
+        _FakeGenerate([_ok("SELECT count(*) AS n FROM ding_dan")]),
+    )
+    payload = ask_payload("多少订单", mcp_cfg)
+    assert payload["embedding_degraded"] is False
+    assert payload["source_tables"] == ["ding_dan"]
 
 
 def test_render_answer_sample_profile_and_empty() -> None:

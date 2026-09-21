@@ -36,6 +36,9 @@ class QaOutcome:
 
     question: str
     retrieved_tables: list[str] = field(default_factory=list)
+    # Channels the retrieval actually used (e.g. ["bm25"] on degradation);
+    # passthrough of RetrievalResult.channels_used, no behavioural meaning.
+    retrieval_channels: list[str] = field(default_factory=list)
     clarification: str | None = None
     vsql: ValidatedSQL | None = None
     execution: ExecutionResult | None = None
@@ -178,6 +181,7 @@ def ask_once(
     return QaOutcome(
         question=question,
         retrieved_tables=[item.table for item in retrieval.items] if retrieval else [],
+        retrieval_channels=list(retrieval.channels_used) if retrieval else [],
         clarification=clarification,
         vsql=vsql,
         execution=execution,

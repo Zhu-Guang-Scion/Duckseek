@@ -45,10 +45,13 @@ DuckDB 或读 Parquet**：nl2data 侧有业务口径词典（glossary，例如"�
 
 参数只有一个自然语言问句（把必要的上下文并进问句里）：
 
-- 成功：`{answer, sql, row_count, elapsed_ms, source_tables}`；
+- 成功：`{answer, sql, row_count, elapsed_ms, source_tables, embedding_degraded}`；
 - `needs_clarification=true` → 把 `question` 反问**原样**转给用户，拿到答复后发起
   **一次新的 ask**（把澄清并入问句，见纪律 3）；
 - `{error}` → 按 §5 速查表处置。
+
+呈现纪律：`embedding_degraded=true` 时必须告知用户"本次检索为 BM25 降级，
+建议补齐 EMB_* 以恢复最佳召回"——降级披露由服务端响应携带，不依赖宿主自觉。
 
 ### Step d — 呈现
 
