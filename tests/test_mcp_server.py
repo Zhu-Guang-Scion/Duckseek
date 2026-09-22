@@ -1,8 +1,9 @@
-"""Tests for the T17 MCP server (mcp_server/): tools, key discipline, injection.
+"""Tests for the T17 MCP server (mcp_server/, product surface "duckseek"): tools,
+key discipline, injection.
 
 Tool calls go through a real in-memory MCP client-server pair (memory streams,
 no stdio subprocess), so every assertion exercises the actual protocol path.
-The blocking pipeline behind ``nl2data_ask`` is mocked at the qa layer
+The blocking pipeline behind ``duckseek_ask`` is mocked at the qa layer
 (``nl2data.qa.generate``), exactly like tests/test_qa.py; the real-env golden
 question runs under the ``slow`` marker.
 """
@@ -174,7 +175,7 @@ def test_tool_surface_is_exactly_three_read_only_tools(mcp_cfg: Nl2DataConfig) -
         return [tool.name for tool in tools.tools]
 
     names = drive(build_server(mcp_cfg), _calls)
-    assert sorted(names) == ["nl2data_ask", "nl2data_list_tables", "nl2data_status"]
+    assert sorted(names) == ["duckseek_ask", "duckseek_list_tables", "duckseek_status"]
 
 
 def test_mcp_serve_cli_wiring() -> None:
@@ -194,7 +195,7 @@ def test_status_missing_key_scenario(
     monkeypatch.setenv("LLM_MODEL", "demo-model")
 
     async def _calls(session: ClientSession) -> dict[str, Any]:
-        return await call_json(session, "nl2data_status", {})
+        return await call_json(session, "duckseek_status", {})
 
     payload = drive(build_server(mcp_cfg), _calls)
     assert payload["missing_env"] == ["LLM_API_KEY", "EMB_BASE_URL", "EMB_API_KEY", "EMB_MODEL"]
@@ -211,7 +212,7 @@ def test_status_never_echoes_env_values(
     _set_full_credential_env(monkeypatch, sentinel="sk-secret")
 
     async def _calls(session: ClientSession) -> Any:
-        result = await session.call_tool("nl2data_status", {})
+        result = await session.call_tool("duckseek_status", {})
         text = result.content[0].text
         # every sentinel value must be absent from the whole serialized reply
         for key in ENV_KEYS:
@@ -296,7 +297,7 @@ def test_ask_contract_shape_and_no_interpretation(
     monkeypatch.setattr("nl2data.qa.chat", _interpret_spy)
 
     async def _calls(session: ClientSession) -> dict[str, Any]:
-        return await call_json(session, "nl2data_ask", {"question": "多少订单"})
+        return await call_json(session, "duckseek_ask", {"question": "多少订单"})
 
     payload = drive(build_server(mcp_cfg), _calls)
     assert set(payload) == {
@@ -460,7 +461,7 @@ def test_ask_golden1_real_env(mcp_env: Nl2DataConfig) -> None:
     repo_cfg = _load(Path(__file__).resolve().parent.parent / "config.yaml")
 
     async def _calls(session: ClientSession) -> dict[str, Any]:
-        return await call_json(session, "nl2data_ask", {"question": GOLDEN1_QUESTION})
+        return await call_json(session, "duckseek_ask", {"question": GOLDEN1_QUESTION})
 
     payload = drive(build_server(repo_cfg), _calls)
     assert set(payload) >= {"answer", "sql", "row_count", "elapsed_ms", "source_tables"}

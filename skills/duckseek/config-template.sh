@@ -1,7 +1,7 @@
-# nl2data 凭证环境变量模板（goals.md §3 决策 3 / 决策 8）
+# DuckSeek 凭证环境变量模板（goals.md §3 决策 3 / 决策 8）
 #
 # 用法（二选一）：
-#   1. 复制为仓库外的私有文件（如 ~/.nl2data-env.sh），填值后 `source` 它，
+#   1. 复制为仓库外的私有文件（如 ~/.duckseek-env.sh），填值后 `source` 它，
 #      再在同一终端启动宿主或 CLI；
 #   2. 直接把六个值填入 MCP 宿主 mcpServers 配置的 "env" 块（推荐，见 README.md）。
 #

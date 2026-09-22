@@ -1,12 +1,15 @@
-"""nl2data MCP server: three read-only tools over stdio for AI hosts (T17).
+"""DuckSeek MCP server: three read-only tools over stdio for AI hosts (T17).
+
+Product surface name is ``duckseek`` (skill + MCP tools); the underlying
+engine — CLI and Python package — is ``nl2data`` and stays unchanged.
 
 Tool surface (minimal by goals.md decision 9 — no ingest/eval/glossary tool):
 
-- ``nl2data_status``: which of the six credential env vars are missing
+- ``duckseek_status``: which of the six credential env vars are missing
   (names only, never values), registered sources/tables, index state.
-- ``nl2data_list_tables``: tables grouped by source with row counts from
+- ``duckseek_list_tables``: tables grouped by source with row counts from
   the stored profiles.
-- ``nl2data_ask``: one question through the full pipeline
+- ``duckseek_ask``: one question through the full pipeline
   (retrieve → generate → guard → sandbox run). Interpretation is
   deliberately skipped: the calling host LLM narrates the result itself,
   saving one API call and keeping the conversation context on its side.
@@ -55,11 +58,11 @@ ENV_KEYS: tuple[str, ...] = (
 )
 
 _SERVER_INSTRUCTIONS = (
-    "nl2data answers natural-language questions over registered tabular data "
-    "(Excel/Access/Parquet → DuckDB). Workflow: call nl2data_status first; if it "
+    "DuckSeek answers natural-language questions over registered tabular data "
+    "(Excel/Access/Parquet → DuckDB). Workflow: call duckseek_status first; if it "
     "reports missing env vars, ask the user to provide them into the server "
     "environment (mcpServers config) — never pass them as tool arguments. Then "
-    "nl2data_list_tables shows the data; nl2data_ask answers each question and "
+    "duckseek_list_tables shows the data; duckseek_ask answers each question and "
     "returns the executed SQL alongside a compact markdown result. All tools "
     "are read-only."
 )
@@ -241,11 +244,11 @@ def ask_payload(question: str, cfg: Nl2DataConfig) -> dict[str, Any]:
 
 def build_server(cfg: Nl2DataConfig) -> MCPServer:
     """Build the MCP server with the three read-only tools bound to ``cfg``."""
-    server: MCPServer = MCPServer("nl2data", instructions=_SERVER_INSTRUCTIONS)
+    server: MCPServer = MCPServer("duckseek", instructions=_SERVER_INSTRUCTIONS)
 
     @server.tool()
-    async def nl2data_status() -> dict[str, Any]:
-        """Environment + data readiness for nl2data.
+    async def duckseek_status() -> dict[str, Any]:
+        """Environment + data readiness for DuckSeek.
 
         Reports which of the six env vars (LLM_BASE_URL/LLM_API_KEY/LLM_MODEL,
         EMB_BASE_URL/EMB_API_KEY/EMB_MODEL) are missing — names only, never
@@ -256,7 +259,7 @@ def build_server(cfg: Nl2DataConfig) -> MCPServer:
         return await anyio.to_thread.run_sync(status_payload, cfg)
 
     @server.tool()
-    async def nl2data_list_tables() -> dict[str, Any]:
+    async def duckseek_list_tables() -> dict[str, Any]:
         """List registered tables grouped by source, with row counts.
 
         Row counts come from stored profiles; ``rows: null`` means the table
@@ -265,7 +268,7 @@ def build_server(cfg: Nl2DataConfig) -> MCPServer:
         return await anyio.to_thread.run_sync(list_tables_payload, cfg)
 
     @server.tool()
-    async def nl2data_ask(question: str) -> dict[str, Any]:
+    async def duckseek_ask(question: str) -> dict[str, Any]:
         """Answer a natural-language question over the registered tables.
 
         Runs retrieve → SQL generation → read-only guard → sandboxed

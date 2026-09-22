@@ -656,7 +656,7 @@ def eval_e2e_cmd(
 
 @mcp_app.command("serve")
 def mcp_serve_cmd(config_path: Path | None = ConfigOption) -> None:
-    """Serve the three read-only nl2data tools over stdio for MCP hosts."""
+    """Serve the three read-only DuckSeek tools over stdio for MCP hosts."""
     from mcp_server.server import serve
 
     cfg = _load_cfg(config_path)

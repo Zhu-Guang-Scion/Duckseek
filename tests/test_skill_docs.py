@@ -2,7 +2,8 @@
 
 The task brief's acceptance criteria are machine-checkable, so they are
 pinned here: file set, SKILL.md budget and frontmatter, tool references
-restricted to the real T17 surface, the four credential disciplines, and
+restricted to the real T17 surface (renamed to duckseek_*), the four
+credential disciplines, and
 config-template.sh variable names matching goals.md decision 3/8.
 """
 
@@ -11,7 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "nl2data"
+SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "duckseek"
 SKILL_MD = SKILL_DIR / "SKILL.md"
 TEMPLATE = SKILL_DIR / "config-template.sh"
 README = SKILL_DIR / "README.md"
@@ -25,7 +26,7 @@ GOALS_ENV_VARS = {
     "EMB_API_KEY",
     "EMB_MODEL",
 }
-TOOL_SURFACE = {"nl2data_status", "nl2data_list_tables", "nl2data_ask"}
+TOOL_SURFACE = {"duckseek_status", "duckseek_list_tables", "duckseek_ask"}
 
 
 def test_skill_package_files_exist() -> None:
@@ -41,7 +42,7 @@ def test_skill_md_frontmatter_and_line_budget() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
     assert text.startswith("---\n")
     frontmatter = text.split("---\n", 2)[1]
-    assert "name: nl2data" in frontmatter
+    assert "name: duckseek" in frontmatter
     assert "description:" in frontmatter and "自然语言查询" in frontmatter
     assert len(text.splitlines()) < 150
 
@@ -50,15 +51,16 @@ def test_skill_references_only_real_tools() -> None:
     """No dangling tool promises: every nl2data_* mention is a real T17 tool,
     and all three tools appear in the workflow."""
     text = SKILL_MD.read_text(encoding="utf-8")
-    mentioned = set(re.findall(r"nl2data_[a-z_]+", text))
+    mentioned = set(re.findall(r"duckseek_[a-z_]+", text))
     assert mentioned == TOOL_SURFACE
+    assert "nl2data_" not in text  # renamed surface: no stale tool references
 
 
 def test_skill_contains_four_disciplines() -> None:
     """All four credential/behaviour disciplines are spelled out."""
     text = SKILL_MD.read_text(encoding="utf-8")
     assert "绝不把 API key 写入任何文件" in text
-    assert "不向 nl2data 传密钥类参数" in text
+    assert "不向 DuckSeek 传密钥类参数" in text
     assert "一次一问" in text
     assert "词典里未定义" in text
 
