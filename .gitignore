@@ -2,6 +2,8 @@
 data/
 *.duckdb
 *.parquet
+# ...except the shipped NYC taxi sample tables (samples are repo content)
+!samples/nyc-taxi/*.parquet
 *.duckdb.wal
 
 # Python
