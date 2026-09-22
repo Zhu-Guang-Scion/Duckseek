@@ -29,3 +29,6 @@ Thumbs.db
 # Local helper dirs from desktop tooling (not part of the project)
 .v2c/
 .video_agent/
+
+# Host session workspace (MCP client configs may live here; never commit)
+.zcode/

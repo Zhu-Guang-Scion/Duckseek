@@ -118,6 +118,7 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 
 - 【阶段二】2026-09-20 V5-D 观察：e2e 比较器在 pass case 行尾仍带出投影/单位等价判定前的中间注记（#7/#8/#17 出现「列数/数值不一致」字样但判定为 ✓）——展示层瑕疵，阶段二顺手修（渲染 pass 时丢弃比较中间态），不动判定逻辑。
 - 【已文档化，无代码待办】2026-09-20 V5-E 联调宿主兼容性观察：①MCP 客户端 stdio 启动默认只透传环境变量白名单（六变量必须在 mcpServers env 块显式传入）；②密钥轮换后须重启 MCP 会话，否则旧密钥致向量通道静默失效（T19 逐调用披露 + SKILL.md 速查表已覆盖）。两项均为宿主行为，已写入 skills/nl2data/，不再列代码级待办。
+- 【纪律】2026-09-22 O1 金丝雀教训：测试中的密钥哨兵/金丝雀值一律用合成值（如 sk-canary-deadbeef），禁止使用真实密钥的任何片段（含前缀）——O1 审计曾因 T18 防泄漏断言含真实 LLM key 前 8 位（d2d161b3）命中 1 处，人类裁定保留不洗史（8 位前缀不可用且密钥已轮换，删除断言反削弱防护）。这是「测试代码也可能泄露」的一次温和预演。
 ## §8 变更规则
 
 - §1/§2/§3/§5 的修改：仅人类本人，或人类明确授权后执行，且必须写 §9 变更日志
@@ -164,3 +165,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-20 生成条件变更（V5-C，人类裁定通过）：联调发现 GLM-5.3-Flash 默认深度思考致 SQL 生成超 50s（宿主 30s 超时必现）；新增 llm.thinking 开关（默认 enabled 向后兼容、未知值 fail fast，仅显式 disabled 时随请求发送 thinking={"type":"disabled"}/GLM 扩展字段，严格 OpenAI 兼容端不受影响），仓库 config.yaml 置 disabled。验证：单次 ask 2m31s → 12.8s，双口径答案一致，497 passed 覆盖 91.35%、ruff 零告警。commit 4834f5d。
 - 2026-09-20 V5-D 复核裁定落地（选项 A）：thinking=disabled 下复跑 e2e——L1=1.000 / L2=0.95 / L3=0.80（+1 case 来源 #7，非 #19；逐 case diff 三处：#7 fail→pass、#11 时间列摆动 L2/L3 转 error、#16 L2 fail→pass）；冻结基线维持 0.75 不动（禁止 --save-baseline），接受 L3∈[0.75,0.80] 为 disabled 条件正常带；已知双向翻转清单扩展为 #7/#11/#16/#19（均 M4 归档边界/风格类，方向可正可负）。成本 5m24s/60 ask（均 ~5.4s）。基线文件全程未动；详见 docs/milestone-5-notes.md §1。
 - 2026-09-20 V5-E 里程碑 5 收官（人类审定）：MCP + Skill 封装完成判据三项全过。里程碑内七笔入库——T17 MCP Server（5fe32ae）、T18 Skill 包（a5da1a7）、V5-C thinking 修复（4834f5d，GLM-5.3-Flash 默认深度思考致 SQL 生成 50s+，开关默认 enabled 向后兼容、仓库 disabled，单次 ask 2m31s→12.8s）、V5-D 基线复核留痕（689045f，选项 A：冻结基线 0.75 维持不动，thinking=disabled 下 L3 正常带 [0.75,0.80]，双向翻转清单扩展#7/#11/#16/#19）、T19 embedding_degraded 逐调用披露（81eed61，读检索实际 channels_used，qa.py 两行零行为透传）。SKILL.md 故障速查表新增密钥轮换行（双副本逐字同步）；docs/milestone-5-notes.md 终版五笔（联调裁定/T19 始末/embedding 跨语言实验/V5-D 复核/教训固化）。里程碑 5 置 🟢。
+- 2026-09-22 O1 GitHub 推送前审计完成：全史（8 commits）与工作区密钥形态扫描全零（sk-/AKIA/Bearer/六变量实值赋值行/两把已轮换真实密钥片段），唯一命中为 tests/test_skill_docs.py:107 防泄漏断言中的真实 key 8 位前缀金丝雀——人类裁定保留不洗史，教训入 §7（金丝雀一律合成值）。大文件：110 个跟踪文件最大 3.2MB、>50MB 为零；三张样本 parquet 与 dist/ 从未入史；parquet 未跟踪按 O3 原计划以 ! 例外放行 samples/nyc-taxi/。LICENSE 为 Apache-2.0 全文（202 行）；.github 无忽略规则。卫生动作：.gitignore 补 .zcode/ 规则（人类确认，关死 git add -A 事故窗）；删除来历不明的 docs/quickstart.md（人类裁定，新手引导归 O2 README）。提交身份切换：今后 commit 以人类指定 GitHub 邮箱 929797342@qq.com 经 -c 传入，历史不动。
