@@ -64,15 +64,16 @@ def test_skill_contains_four_disciplines() -> None:
 
 
 def test_skill_workflow_steps_and_fault_table() -> None:
-    """The workflow covers status→list_tables→ask→呈现 plus the three
-    mandatory fault-table rows (index unbuilt / table missing / timeout)."""
+    """The workflow covers status→list_tables→ask→呈现 plus the mandatory
+    fault-table rows (index unbuilt / table missing / timeout / rotated key)."""
     text = SKILL_MD.read_text(encoding="utf-8")
     for step in ("Step a", "Step b", "Step c", "Step d"):
         assert step in text, step
-    for keyword in ("index.built=false", "查不到某表", "超时"):
+    for keyword in ("index.built=false", "查不到某表", "超时", "已轮换失效"):
         assert keyword in text, keyword
     for command in ("profile --all", "cards build --all", "index build"):
         assert command in text, command
+    assert "embedding_degraded=true" in text  # V5-E: rotated-key row
 
 
 def test_skill_referenced_files_exist() -> None:

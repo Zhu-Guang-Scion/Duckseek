@@ -76,9 +76,10 @@
 
 
 
-**里程碑 5：MCP + Skill 封装** —— 状态：🟡 进行中（独立小里程碑，不改变阶段划分；两项已完成，待人类通读 SKILL.md 后收官）
+**里程碑 5：MCP + Skill 封装** —— 状态：🟢 完成（2026-09-20 V5-E 人类审定收官）
 - MCP Server（tools：status / list_tables / ask）—— 🟢（T17，mcp 2.2 stdio）；SKILL.md 封装 —— 🟢（T18，skills/nl2data/ 三件套）
 - 完成判据：AI 宿主可显式调用 nl2data 完成接入到问答全流程；缺失配置时由宿主 LLM 向用户索要；密钥零出现在 tool 参数/返回值（专项测试）
+  2026-09-20 V5-E 验收：完成判据三项全过——真实 stdio 联调全流程（status 诊断→list_tables→ask 正确作答）；缺配置场景经 2026-09-20 真实密钥轮换事故验证（宿主正确披露与索要）；密钥零出现由 T17 哨兵断言在案。详见 docs/milestone-5-notes.md。
 ### 阶段二：准确率工程（MVP 验收后启动）
 多候选 SQL + 选择器、实体索引、Python 分析沙箱、查询缓存。
 
@@ -116,6 +117,7 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - M4 任务：glossary schema 支持指标级口径：term 增加 metric_filter 与 applies_to 键；T6 校验器、卡片渲染、system.md 配套；#12 为验证用例，expected_sql 两侧均含 payment_type=1。✅ 已完成（2026-09-19 T14：schema/互斥校验/跨表注入/渲染区分/规则 6 落地，#12 真实链路两侧过滤且数值与 T13 参考值逐位一致）
 
 - 【阶段二】2026-09-20 V5-D 观察：e2e 比较器在 pass case 行尾仍带出投影/单位等价判定前的中间注记（#7/#8/#17 出现「列数/数值不一致」字样但判定为 ✓）——展示层瑕疵，阶段二顺手修（渲染 pass 时丢弃比较中间态），不动判定逻辑。
+- 【已文档化，无代码待办】2026-09-20 V5-E 联调宿主兼容性观察：①MCP 客户端 stdio 启动默认只透传环境变量白名单（六变量必须在 mcpServers env 块显式传入）；②密钥轮换后须重启 MCP 会话，否则旧密钥致向量通道静默失效（T19 逐调用披露 + SKILL.md 速查表已覆盖）。两项均为宿主行为，已写入 skills/nl2data/，不再列代码级待办。
 ## §8 变更规则
 
 - §1/§2/§3/§5 的修改：仅人类本人，或人类明确授权后执行，且必须写 §9 变更日志
@@ -161,3 +163,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-19 T18 Skill 包完成：skills/nl2data/ 三件套（SKILL.md 主文件 97 行 + config-template.sh 六变量空占位模板（变量名与 §3 决策 3/8 一致，硅基流动公开示例注释，零密钥零内部地址）+ README.md 宿主注册指南（mcpServers JSON 片段即 T17 交付样例落地版，Claude Code/Cursor/zcode 注册位置，env 块显式传六变量的说明））。SKILL.md 按 progressive disclosure：第三人称 frontmatter 触发场景、快速判断（禁绕过口径层直连 DuckDB）、四步工作流（status 诊断含缺配置固定话术与 CLI 三步命令 → list_tables → ask（needs_clarification 原样转达、新问句重发）→ 呈现附 SQL 可核验提醒）、四条纪律逐条成文、故障速查表五行。验收标准机器化为 tests/test_skill_docs.py 8 项（目录齐备/<150 行/工具引用恰为 T17 三件无悬空/四纪律关键词/工作流四步与速查三行/引用文件存在/六变量一致/全包无密钥字面量）。质量门：ruff 零告警、496 passed 覆盖 91.41%。SKILL.md 全文已随交付报告呈人类过目。
 - 2026-09-20 生成条件变更（V5-C，人类裁定通过）：联调发现 GLM-5.3-Flash 默认深度思考致 SQL 生成超 50s（宿主 30s 超时必现）；新增 llm.thinking 开关（默认 enabled 向后兼容、未知值 fail fast，仅显式 disabled 时随请求发送 thinking={"type":"disabled"}/GLM 扩展字段，严格 OpenAI 兼容端不受影响），仓库 config.yaml 置 disabled。验证：单次 ask 2m31s → 12.8s，双口径答案一致，497 passed 覆盖 91.35%、ruff 零告警。commit 4834f5d。
 - 2026-09-20 V5-D 复核裁定落地（选项 A）：thinking=disabled 下复跑 e2e——L1=1.000 / L2=0.95 / L3=0.80（+1 case 来源 #7，非 #19；逐 case diff 三处：#7 fail→pass、#11 时间列摆动 L2/L3 转 error、#16 L2 fail→pass）；冻结基线维持 0.75 不动（禁止 --save-baseline），接受 L3∈[0.75,0.80] 为 disabled 条件正常带；已知双向翻转清单扩展为 #7/#11/#16/#19（均 M4 归档边界/风格类，方向可正可负）。成本 5m24s/60 ask（均 ~5.4s）。基线文件全程未动；详见 docs/milestone-5-notes.md §1。
+- 2026-09-20 V5-E 里程碑 5 收官（人类审定）：MCP + Skill 封装完成判据三项全过。里程碑内七笔入库——T17 MCP Server（5fe32ae）、T18 Skill 包（a5da1a7）、V5-C thinking 修复（4834f5d，GLM-5.3-Flash 默认深度思考致 SQL 生成 50s+，开关默认 enabled 向后兼容、仓库 disabled，单次 ask 2m31s→12.8s）、V5-D 基线复核留痕（689045f，选项 A：冻结基线 0.75 维持不动，thinking=disabled 下 L3 正常带 [0.75,0.80]，双向翻转清单扩展#7/#11/#16/#19）、T19 embedding_degraded 逐调用披露（81eed61，读检索实际 channels_used，qa.py 两行零行为透传）。SKILL.md 故障速查表新增密钥轮换行（双副本逐字同步）；docs/milestone-5-notes.md 终版五笔（联调裁定/T19 始末/embedding 跨语言实验/V5-D 复核/教训固化）。里程碑 5 置 🟢。

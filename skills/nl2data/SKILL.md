@@ -96,5 +96,6 @@ mcpServers 配置的 `env` 块并重启会话/服务器，再调 `nl2data_status
 | `index.built=false` | 让用户在仓库根目录按序跑 Step a 的 CLI 三步（index build 前先配好 EMB_*）。 |
 | `list_tables` 里查不到某表 | 数据未注册：让用户用 CLI 摄取（`uv run nl2data ingest excel\|access\|parquet <文件>`）后重跑三步，再 `list_tables` 确认。 |
 | ask 返回 `error` 含"超时" | 查询过大：建议用户缩小时间范围/分组粒度后重新 ask；连续超时再检查 `exec.timeout_seconds` 配置。 |
+| `embedding_degraded=true` 且 env 已配置 | 密钥可能已轮换失效：让用户填新密钥并重启会话（环境变量启动时读取）。 |
 | ask 返回 `error` 含"护栏拒绝" | 生成 SQL 不合规且自动重试仍失败：换一种问法重新 ask，不要试图绕过。 |
 | ask 返回 `error` 含"LLM 调用失败" | 凭证或网络问题：回到 Step a 复查 `missing_env`，让用户更新宿主 env 配置并重启。 |
