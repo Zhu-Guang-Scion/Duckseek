@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import stat
 import time
 from dataclasses import replace
 from decimal import Decimal
@@ -385,17 +384,29 @@ def test_collect_error_is_classified(
     assert result.error["category"] == "permission"
 
 
-def test_cleanup_skips_undeletable_file(runner_config: Nl2DataConfig) -> None:
-    """Files that cannot be unlinked are skipped without raising."""
+def test_cleanup_skips_undeletable_file(
+    runner_config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Files that cannot be unlinked are skipped without raising.
+
+    Undeletability is simulated by making ``Path.unlink`` raise for that one
+    file: chmod-based tricks are platform-specific (a read-only *file* still
+    unlinks on POSIX, where unlink permission depends on the parent directory,
+    while a read-only *directory* still allows deletion on Windows).
+    """
     scratch = runner_config.paths.scratch_dir
     scratch.mkdir(parents=True, exist_ok=True)
     stuck = scratch / "stuck.parquet"
     pq.write_table(pa.table({"x": [1]}), stuck)
     old = time.time() - 73 * 3600.0
     os.utime(stuck, (old, old))
-    os.chmod(stuck, stat.S_IREAD)
-    try:
-        assert cleanup_scratch(runner_config) == 0
-        assert stuck.exists()
-    finally:
-        os.chmod(stuck, stat.S_IWRITE)
+    real_unlink = Path.unlink
+
+    def _stuck_unlink(self: Path, *, missing_ok: bool = False) -> None:
+        if self.name == "stuck.parquet":
+            raise OSError("simulated undeletable file")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", _stuck_unlink)
+    assert cleanup_scratch(runner_config) == 0
+    assert stuck.exists()
