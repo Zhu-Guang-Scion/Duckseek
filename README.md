@@ -3,8 +3,9 @@
 [![CI](https://github.com/Zhu-Guang-Scion/Duckseek/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Zhu-Guang-Scion/Duckseek/actions/workflows/ci.yml)
 
 **一句话简介**：DuckSeek（Python 包名 `nl2data`）是一个开源（Apache-2.0）的 CLI
-工具，让你用自然语言直接查询大体量（十万至百万行级）Excel / Access / Parquet
+工具，让你用自然语言直接查询大体量（十万至千万行级）Excel / Access / Parquet
 数据——答案永远附带实际执行的 SQL，可人工核验。
+支持处理多表，表格行数上限取决于硬件性能。
 
 ## 架构
 
