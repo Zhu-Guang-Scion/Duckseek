@@ -1,7 +1,6 @@
 # DuckSeek
 
-[![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/<owner>/<repo>/actions/workflows/ci.yml)
-<!-- badge 占位：remote 建立后替换 <owner>/<repo> -->
+[![CI](https://github.com/Zhu-Guang-Scion/Duckseek/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Zhu-Guang-Scion/Duckseek/actions/workflows/ci.yml)
 
 **一句话简介**：DuckSeek（Python 包名 `nl2data`）是一个开源（Apache-2.0）的 CLI
 工具，让你用自然语言直接查询大体量（十万至百万行级）Excel / Access / Parquet
@@ -54,7 +53,7 @@ export EMB_MODEL="your-embedding-model"
 ```
 
 ```bash
-git clone <repo> && cd nl2data
+git clone https://github.com/Zhu-Guang-Scion/Duckseek.git && cd Duckseek
 uv sync                                   # 创建 .venv 并安装依赖（锁定于 uv.lock）
 
 # 1) 接入数据（三种来源任选；零拷贝注册或转换落盘；表名 = 文件名，clean_name 规则）
