@@ -37,6 +37,7 @@ dependencies = [
     "jieba>=0.42.1",
     "openai>=3.16.0",
     "mcp>=2.2.0",
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]
@@ -44,7 +45,6 @@ dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
     "ruff>=0.6",
-    "openpyxl>=3.1",
 ]
 
 [project.scripts]

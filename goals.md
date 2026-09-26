@@ -25,7 +25,7 @@
 ### 明确不做（Non-goals）
 
 - **不做本地模型适配**（Ollama 等）——LLM 仅通过 API 调用（见 §3 决策 3）
-- MVP 阶段不做：多轮对话记忆、图表可视化、用户系统、Web UI
+- MVP 阶段不做：多轮对话记忆、用户系统、Web UI（图表可视化原列于此，M6 立项解禁——见决策 10 与 §9 立项记录）
 - 不支持：.xlsb / .numbers / 加密的 .accdb；Access 只读不写
 
 ## §3 锁定的架构决策（ADR 摘要）
@@ -41,6 +41,7 @@
 | 7 | 测试与质量 | pytest（覆盖率 ≥85%）+ ruff 零告警，是每个任务的完成前提 | 锁定 |
 | 8 | Embedding 接入 | 仅 OpenAI 兼容 API：环境变量 EMB_BASE_URL / EMB_API_KEY / EMB_MODEL 配置；embedding 结果落本地磁盘缓存避免重复调用；不引入本地 embedding 模型 | 锁定 |
 | 9 | 对外封装 | 仅经 MCP tools + SKILL.md；tools 面最小化（status / list_tables / ask），密钥只走环境变量，任何 tool 参数与返回值不得携带密钥值 | 锁定 |
+| 10 | 查询产物导出 | 导出产物 = xlsx（openpyxl 原生图表）+ manifest JSON（含 version 字段）；图型由 LLM 判定、经确定性校验器把关，v1 仅 bar/line/pie；不引入 matplotlib/PNG；MCP 经 ask 可选参数 export 触发，工具面维持三只 | 锁定 |
 
 > 注：早期讨论中的"Provider 抽象层 + Ollama 可切换"方案已被决策 3 取代，不再有效。
 
@@ -80,6 +81,11 @@
 - MCP Server（tools：status / list_tables / ask）—— 🟢（T17，mcp 2.2 stdio）；SKILL.md 封装 —— 🟢（T18，skills/nl2data/ 三件套）
 - 完成判据：AI 宿主可显式调用 nl2data 完成接入到问答全流程；缺失配置时由宿主 LLM 向用户索要；密钥零出现在 tool 参数/返回值（专项测试）
   2026-09-20 V5-E 验收：完成判据三项全过——真实 stdio 联调全流程（status 诊断→list_tables→ask 正确作答）；缺配置场景经 2026-09-20 真实密钥轮换事故验证（宿主正确披露与索要）；密钥零出现由 T17 哨兵断言在案。详见 docs/milestone-5-notes.md。
+
+**里程碑 6：查询产物导出** —— 状态：🟡 进行中
+- 同一次导出产出 .xlsx（数据 + 元数据 + Excel 原生图表，人类继续编辑）+ manifest.json（自描述机器清单，agent 嵌入契约面，version 字段必带）
+- T20 export/ 三模块（chart_spec / xlsx / manifest）+ 配置 + CLI/MCP 双端入口（MCP 经 ask 可选参数 export 触发）—— ⚪
+- 完成判据：双端可导出含 LLM 判定图表的 xlsx + 自描述 manifest；截断必披露；降级链不阻断导出；T19 ask 六键契约零回归
 ### 阶段二：准确率工程（MVP 验收后启动）
 多候选 SQL + 选择器、实体索引、Python 分析沙箱、查询缓存。
 
@@ -169,3 +175,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-20 V5-E 里程碑 5 收官（人类审定）：MCP + Skill 封装完成判据三项全过。里程碑内七笔入库——T17 MCP Server（5fe32ae）、T18 Skill 包（a5da1a7）、V5-C thinking 修复（4834f5d，GLM-5.3-Flash 默认深度思考致 SQL 生成 50s+，开关默认 enabled 向后兼容、仓库 disabled，单次 ask 2m31s→12.8s）、V5-D 基线复核留痕（689045f，选项 A：冻结基线 0.75 维持不动，thinking=disabled 下 L3 正常带 [0.75,0.80]，双向翻转清单扩展#7/#11/#16/#19）、T19 embedding_degraded 逐调用披露（81eed61，读检索实际 channels_used，qa.py 两行零行为透传）。SKILL.md 故障速查表新增密钥轮换行（双副本逐字同步）；docs/milestone-5-notes.md 终版五笔（联调裁定/T19 始末/embedding 跨语言实验/V5-D 复核/教训固化）。里程碑 5 置 🟢。
 - 2026-09-22 O1 GitHub 推送前审计完成：全史（8 commits）与工作区密钥形态扫描全零（sk-/AKIA/Bearer/六变量实值赋值行/两把已轮换真实密钥片段），唯一命中为 tests/test_skill_docs.py:107 防泄漏断言中的真实 key 8 位前缀金丝雀——人类裁定保留不洗史，教训入 §7（金丝雀一律合成值）。大文件：110 个跟踪文件最大 3.2MB、>50MB 为零；三张样本 parquet 与 dist/ 从未入史；parquet 未跟踪按 O3 原计划以 ! 例外放行 samples/nyc-taxi/。LICENSE 为 Apache-2.0 全文（202 行）；.github 无忽略规则。卫生动作：.gitignore 补 .zcode/ 规则（人类确认，关死 git add -A 事故窗）；删除来历不明的 docs/quickstart.md（人类裁定，新手引导归 O2 README）。提交身份切换：今后 commit 以人类指定 GitHub 邮箱 929797342@qq.com 经 -c 传入，历史不动。
 - 2026-09-23 O5 推送完成（开源准备 O1-O5 闭环）：O1 审计复跑增量零命中（d2d161b3 历史 3 处均为 T18 金丝雀与 O1 裁定记录的文字引用）；全量质量门 ruff 零告警、快套件 498 + slow 2 = 500 passed、覆盖 91.35%；仓库推送至 git@github.com:Zhu-Guang-Scion/Duckseek.git（SSH 443 通道，22 端口被网络拒绝），远端 Initial commit 经变基整合保留为根（本地 14 笔重放其上，历史作者保留），远端 main = 2f78bb8（114 文件，含三样本 parquet/CI/skills/duckseek）；GitHub GH001 大文件警告对应 yellow 67.9MB 警告带（README 已声明）。CI workflow 已随推送触发，本地 env-unset 等价命令全绿 + YAML 校验通过；Actions 首跑页面待人类目检（私有库无 API 凭证）。
+- 2026-09-24 M6 立项（查询产物导出，人类批准：里程碑 6 裁定文档 v1·顾问修订版）：§2 Non-goals 移除「图表可视化」（MVP 已收官首次解禁）；§3 新增锁定决策 10（xlsx 原生图表 + manifest JSON 含 version 字段；LLM 判定图型 + 确定性校验器，v1 仅 bar/line/pie；无 matplotlib/PNG；MCP 经 ask 可选参数 export，工具面三只不动）；§4 M6 🟡。含顾问 2 必修（截断可见披露 / manifest version:1）+ 3 建议（v1 砍 scatter / 校验规则明确：pie 恰 1 measure、bar-line ≥1 且 dimension 非空 / tool_version 溯源）。openpyxl 自 dev 提升为主依赖。前置 O5 推送已满足。
