@@ -486,6 +486,66 @@ def _render_outcome(outcome: object) -> None:
         console.print(table)
 
 
+def _export_xlsx_bundle(
+    cfg: Any, last: Any, last_question: str, target_dir: Path | None = None
+) -> None:
+    """Export the last successful outcome to xlsx + manifest and report."""
+    from export import run_export
+
+    if not (last is not None and last.ok):
+        console.print("[yellow]最近一次问答没有可导出的成功结果[/yellow]")
+        return
+    try:
+        result = run_export(last_question, last, cfg, target_dir=target_dir)
+    except (OSError, ValueError) as exc:
+        console.print(f"[red]导出失败:[/red] {exc}")
+        return
+    chart_note = (
+        f"图表:{result.chart_spec.chart_type} {result.chart_spec.title}"
+        if result.chart_spec
+        else f"无图表({result.chart_error})"
+    )
+    truncated_note = (
+        f" | [yellow]⚠ 已截断 {result.exported_rows}/{result.total_rows} 行"
+        f"(完整明细见 meta 表披露)[/yellow]"
+        if result.truncated
+        else ""
+    )
+    console.print(
+        f"[green]已导出[/green] {result.xlsx_path}\n"
+        f"  清单 {result.manifest_path} | 导出 {result.exported_rows} 行"
+        f"{truncated_note} | {chart_note}"
+    )
+
+
+def _export_cli(
+    line: str, cfg: Any, last: Any, last_question: str
+) -> None:
+    """Handle ``/export csv <path>`` and ``/export xlsx [dir]``."""
+    parts = line.split(maxsplit=2)
+    fmt = parts[1] if len(parts) >= 2 else ""
+    if fmt == "csv":
+        if len(parts) < 3:
+            console.print("[yellow]用法:/export csv <路径>[/yellow]")
+            return
+        if not (last and last.execution and last.execution.detail_ref):
+            console.print("[yellow]最近一次结果没有明细文件(小结果集不落盘)[/yellow]")
+            return
+        import pandas as pd
+
+        src = Path(last.execution.detail_ref)
+        if not src.is_absolute():
+            src = cfg.paths.data_dir.parent / src
+        pd.read_parquet(src).to_csv(parts[2], index=False, encoding="utf-8-sig")
+        console.print(f"[green]已导出[/green] {parts[2]}")
+        return
+    if fmt == "xlsx":
+        target = Path(parts[2]) if len(parts) >= 3 else None
+        _export_xlsx_bundle(cfg, last, last_question, target_dir=target)
+        return
+    console.print("[yellow]用法:/export csv <路径> 或 /export xlsx [目录][/yellow]")
+
+
 @app.command("ask")
 def ask_cmd(
     question: list[str] = typer.Argument(
@@ -494,11 +554,17 @@ def ask_cmd(
     no_interpret: bool = typer.Option(
         False, "--no-interpret", help="Skip the narration LLM call."
     ),
+    export_fmt: str = typer.Option(
+        "", "--export", help='Export artifacts for the answer (currently "xlsx").'
+    ),
     config_path: Path | None = ConfigOption,
 ) -> None:
     """Ask one question (or enter an interactive loop)."""
     from nl2data.qa import QaOutcome, ask_once
 
+    if export_fmt and export_fmt != "xlsx":
+        console.print(f'[red]不支持的导出格式:{export_fmt}(当前仅 "xlsx")[/red]')
+        raise typer.Exit(code=2)
     cfg = _load_cfg(config_path)
     single = " ".join(question).strip() if question else ""
 
@@ -506,12 +572,15 @@ def ask_cmd(
         return ask_once(q, cfg, no_interpret=no_interpret, extra_feedback=extra)
 
     if single:
-        _render_outcome(_ask(single))
+        outcome = _ask(single)
+        _render_outcome(outcome)
+        if export_fmt:
+            _export_xlsx_bundle(cfg, outcome, single)
         return
 
     console.print(
         "交互模式:直接输入问题;命令 /retry [补充说明] /show sql /export csv <路径> "
-        "/tables /exit"
+        "/export xlsx [目录] /tables /exit"
     )
     last: QaOutcome | None = None
     last_question = ""
@@ -540,21 +609,8 @@ def ask_cmd(
             last = _ask(last_question, extra_feedback=extra)
             _render_outcome(last)
             continue
-        if line.startswith("/export csv"):
-            parts = line.split(maxsplit=2)
-            if len(parts) < 3:
-                console.print("[yellow]用法:/export csv <路径>[/yellow]")
-                continue
-            if not (last and last.execution and last.execution.detail_ref):
-                console.print("[yellow]最近一次结果没有明细文件(小结果集不落盘)[/yellow]")
-                continue
-            import pandas as pd
-
-            src = Path(last.execution.detail_ref)
-            if not src.is_absolute():
-                src = cfg.paths.data_dir.parent / src
-            pd.read_parquet(src).to_csv(parts[2], index=False, encoding="utf-8-sig")
-            console.print(f"[green]已导出[/green] {parts[2]}")
+        if line.startswith("/export"):
+            _export_cli(line, cfg, last, last_question)
             continue
         if line == "/tables":
             from nl2data.qa import catalog_whitelists

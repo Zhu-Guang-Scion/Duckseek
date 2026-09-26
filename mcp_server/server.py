@@ -34,6 +34,7 @@ import yaml
 from mcp.server.mcpserver import MCPServer
 
 from exec.runner import ExecutionResult
+from export import run_export
 from llm.chat import ENV_API_KEY as LLM_KEY_ENV
 from llm.chat import ENV_BASE_URL as LLM_URL_ENV
 from llm.chat import ENV_MODEL as LLM_MODEL_ENV
@@ -213,8 +214,17 @@ def _render_answer(execution: ExecutionResult) -> str:
     return "\n".join(lines)
 
 
-def ask_payload(question: str, cfg: Nl2DataConfig) -> dict[str, Any]:
-    """Run one question through the pipeline (no interpretation LLM call)."""
+def ask_payload(
+    question: str, cfg: Nl2DataConfig, export: str = ""
+) -> dict[str, Any]:
+    """Run one question through the pipeline (no interpretation LLM call).
+
+    With ``export="xlsx"`` a successful answer additionally writes the
+    artifact bundle of decision 10 (xlsx + manifest) and attaches an
+    ``artifacts`` key; degradation never blocks the answer itself.
+    """
+    if export and export != "xlsx":
+        return {"error": f"不支持的导出格式:{export!r}(当前仅 xlsx)"}
     started = time.perf_counter()
     try:
         outcome = ask_once(question, cfg, no_interpret=True)
@@ -229,7 +239,7 @@ def ask_payload(question: str, cfg: Nl2DataConfig) -> dict[str, Any]:
     if not outcome.ok:
         return {"error": _scrub(outcome.failure_reason or "未能回答")}
     assert outcome.execution is not None and outcome.vsql is not None
-    return {
+    payload: dict[str, Any] = {
         "answer": _render_answer(outcome.execution),
         "sql": outcome.vsql.sql,
         "row_count": outcome.execution.rowcount,
@@ -240,6 +250,20 @@ def ask_payload(question: str, cfg: Nl2DataConfig) -> dict[str, Any]:
         # missing, the embedding call failed mid-query, or it scored no hits.
         "embedding_degraded": "vector" not in outcome.retrieval_channels,
     }
+    if export:
+        try:
+            result = run_export(question, outcome, cfg)
+        except Exception as exc:  # noqa: BLE001 -- answer stands, export reported
+            logger.warning("export failed after a successful ask", exc_info=True)
+            payload["artifacts_error"] = _scrub(f"导出失败:{exc}")
+            return payload
+        payload["artifacts"] = {
+            "xlsx": str(result.xlsx_path.resolve()),
+            "manifest": str(result.manifest_path.resolve()),
+            "chart": result.chart_spec.to_dict() if result.chart_spec else None,
+            "chart_error": result.chart_error,
+        }
+    return payload
 
 
 def build_server(cfg: Nl2DataConfig) -> MCPServer:
@@ -268,7 +292,7 @@ def build_server(cfg: Nl2DataConfig) -> MCPServer:
         return await anyio.to_thread.run_sync(list_tables_payload, cfg)
 
     @server.tool()
-    async def duckseek_ask(question: str) -> dict[str, Any]:
+    async def duckseek_ask(question: str, export: str = "") -> dict[str, Any]:
         """Answer a natural-language question over the registered tables.
 
         Runs retrieve → SQL generation → read-only guard → sandboxed
@@ -280,8 +304,14 @@ def build_server(cfg: Nl2DataConfig) -> MCPServer:
         yourself. Ambiguous questions return ``needs_clarification`` with a
         follow-up ``question`` to ask the user. Read-only; the SQL is
         verified to be a single SELECT before it runs.
+
+        Optional ``export="xlsx"`` (opt-in, nothing by default) writes an
+        artifact bundle beside the answer: an .xlsx (data + meta +
+        LLM-chosen native chart) and a self-describing manifest.json —
+        the returned ``artifacts`` key carries both absolute paths plus the
+        chart spec; tell the user where the files are.
         """
-        return await anyio.to_thread.run_sync(ask_payload, question, cfg)
+        return await anyio.to_thread.run_sync(ask_payload, question, cfg, export)
 
     return server
 

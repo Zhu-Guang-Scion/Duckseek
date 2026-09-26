@@ -192,6 +192,22 @@ class EvalConfig:
 
 
 @dataclass(frozen=True)
+class ExportConfig:
+    """Query-artifact export parameters (milestone 6, T20, decision 10).
+
+    ``dir`` receives ``<timestamp>_<hash>/`` bundle folders (xlsx +
+    manifest) and is NOT auto-cleaned — artifacts face downstream systems,
+    unlike the scratch spill's 72h policy. ``chart_llm`` off degrades to a
+    plain data export (no LLM call, no chart).
+    """
+
+    dir: Path = Path("data/exports")
+    max_rows: int = 10_000
+    chart_llm: bool = True
+    top_n_default: int = 15
+
+
+@dataclass(frozen=True)
 class ExecConfig:
     """Sandboxed execution parameters (milestone 3, T11)."""
 
@@ -218,6 +234,7 @@ class Nl2DataConfig:
     exec: ExecConfig = ExecConfig()
     qa: QaConfig = QaConfig()
     eval: EvalConfig = EvalConfig()
+    export: ExportConfig = ExportConfig()
 
 
 def default_config_path() -> Path:
@@ -325,6 +342,7 @@ def load_config(path: Path | None = None) -> Nl2DataConfig:
     exec_section: dict[str, Any] = raw.get("exec") or {}
     qa_section: dict[str, Any] = raw.get("qa") or {}
     eval_section: dict[str, Any] = raw.get("eval") or {}
+    export_section: dict[str, Any] = raw.get("export") or {}
     return Nl2DataConfig(
         paths=_build_paths(raw.get("paths") or {}, base),
         ingest=IngestConfig(
@@ -407,5 +425,13 @@ def load_config(path: Path | None = None) -> Nl2DataConfig:
         eval=EvalConfig(
             temperature=float(eval_section.get("temperature", 0.0)),
             runs_per_case=int(eval_section.get("runs_per_case", 1)),
+        ),
+        export=ExportConfig(
+            dir=_resolve(
+                base, Path(str(export_section.get("dir", Path("data") / "exports")))
+            ),
+            max_rows=int(export_section.get("max_rows", 10_000)),
+            chart_llm=bool(export_section.get("chart_llm", True)),
+            top_n_default=int(export_section.get("top_n_default", 15)),
         ),
     )

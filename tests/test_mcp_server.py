@@ -343,6 +343,63 @@ def test_ask_embedding_not_degraded_when_vector_channel_used(
     assert payload["source_tables"] == ["ding_dan"]
 
 
+def _install_chart_stub(monkeypatch: pytest.MonkeyPatch, parsed: dict[str, Any]) -> None:
+    """Stub the export chart-spec LLM call with a fixed proposal."""
+    from llm.chat import ChatResult, Usage
+
+    monkeypatch.setattr(
+        "export.chart_spec.chat",
+        lambda messages, json_schema=None, cfg=None: ChatResult(
+            content="{}", parsed=parsed, usage=Usage(0, 0, 0), model="stub",
+            latency_ms=1.0,
+        ),
+    )
+
+
+def test_ask_export_xlsx_adds_artifacts(
+    mcp_cfg: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """export="xlsx" adds the artifacts key with real on-disk bundle paths."""
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setattr(
+        "nl2data.qa.generate",
+        _FakeGenerate([_ok("SELECT cheng_shi AS borough, sum(jin_e) AS total "
+                           "FROM ding_dan GROUP BY cheng_shi")]),
+    )
+    _install_chart_stub(monkeypatch, {
+        "chart_type": "bar", "dimension": "borough", "measures": ["total"],
+        "title": "城市金额", "top_n": 5,
+    })
+
+    async def _calls(session: ClientSession) -> dict[str, Any]:
+        return await call_json(
+            session, "duckseek_ask", {"question": "按城市汇总金额", "export": "xlsx"}
+        )
+
+    payload = drive(build_server(mcp_cfg), _calls)
+    assert set(payload) == {
+        "answer", "sql", "row_count", "elapsed_ms", "source_tables",
+        "embedding_degraded", "artifacts",
+    }
+    artifacts = payload["artifacts"]
+    assert Path(artifacts["xlsx"]).is_file()
+    assert Path(artifacts["manifest"]).is_file()
+    assert artifacts["chart"]["chart_type"] == "bar"
+    assert artifacts["chart_error"] is None
+
+
+def test_ask_export_invalid_format_rejected_before_pipeline(
+    mcp_cfg: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unknown export format fails fast without touching the pipeline."""
+    monkeypatch.setattr(
+        "nl2data.qa.ask_once",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("pipeline must not run")),
+    )
+    payload = ask_payload("任何问题", mcp_cfg, export="pdf")
+    assert payload == {"error": "不支持的导出格式:'pdf'(当前仅 xlsx)"}
+
+
 def test_render_answer_sample_profile_and_empty() -> None:
     """The markdown renderer: inline rows, sample note + profile, empty case."""
     small = ExecutionResult(

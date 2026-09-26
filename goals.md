@@ -82,10 +82,11 @@
 - 完成判据：AI 宿主可显式调用 nl2data 完成接入到问答全流程；缺失配置时由宿主 LLM 向用户索要；密钥零出现在 tool 参数/返回值（专项测试）
   2026-09-20 V5-E 验收：完成判据三项全过——真实 stdio 联调全流程（status 诊断→list_tables→ask 正确作答）；缺配置场景经 2026-09-20 真实密钥轮换事故验证（宿主正确披露与索要）；密钥零出现由 T17 哨兵断言在案。详见 docs/milestone-5-notes.md。
 
-**里程碑 6：查询产物导出** —— 状态：🟡 进行中
+**里程碑 6：查询产物导出** —— 状态：🟢 完成（2026-09-24 V6 验收，按人类裁定文档 v1·顾问修订版执行）
 - 同一次导出产出 .xlsx（数据 + 元数据 + Excel 原生图表，人类继续编辑）+ manifest.json（自描述机器清单，agent 嵌入契约面，version 字段必带）
-- T20 export/ 三模块（chart_spec / xlsx / manifest）+ 配置 + CLI/MCP 双端入口（MCP 经 ask 可选参数 export 触发）—— ⚪
+- T20 export/ 三模块（chart_spec / xlsx / manifest）+ 配置 + CLI/MCP 双端入口（MCP 经 ask 可选参数 export 触发）—— 🟢
 - 完成判据：双端可导出含 LLM 判定图表的 xlsx + 自描述 manifest；截断必披露；降级链不阻断导出；T19 ask 六键契约零回归
+  2026-09-24 V6 验收：CLI --export 与 /export xlsx、MCP 两态（带 export 附 artifacts 键/缺省恰六键防回归钉死）全部实测；截断披露（meta ⚠ 行 + manifest truncated/total/exported）与降级链（chart_llm 关闭零调用、LlmError scrub、校验不过诚实拒画）测试在案；顾问 2 必修 3 建议全落地（截断披露/version:1/砍 scatter/pie 恰 1 measure/tool_version 溯源）。质量门 ruff 零告警、513 passed 覆盖 91.61%。真实 LLM 抽查件测试就位（slow,密钥缺席自跳过）。
 ### 阶段二：准确率工程（MVP 验收后启动）
 多候选 SQL + 选择器、实体索引、Python 分析沙箱、查询缓存。
 
@@ -176,3 +177,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-22 O1 GitHub 推送前审计完成：全史（8 commits）与工作区密钥形态扫描全零（sk-/AKIA/Bearer/六变量实值赋值行/两把已轮换真实密钥片段），唯一命中为 tests/test_skill_docs.py:107 防泄漏断言中的真实 key 8 位前缀金丝雀——人类裁定保留不洗史，教训入 §7（金丝雀一律合成值）。大文件：110 个跟踪文件最大 3.2MB、>50MB 为零；三张样本 parquet 与 dist/ 从未入史；parquet 未跟踪按 O3 原计划以 ! 例外放行 samples/nyc-taxi/。LICENSE 为 Apache-2.0 全文（202 行）；.github 无忽略规则。卫生动作：.gitignore 补 .zcode/ 规则（人类确认，关死 git add -A 事故窗）；删除来历不明的 docs/quickstart.md（人类裁定，新手引导归 O2 README）。提交身份切换：今后 commit 以人类指定 GitHub 邮箱 929797342@qq.com 经 -c 传入，历史不动。
 - 2026-09-23 O5 推送完成（开源准备 O1-O5 闭环）：O1 审计复跑增量零命中（d2d161b3 历史 3 处均为 T18 金丝雀与 O1 裁定记录的文字引用）；全量质量门 ruff 零告警、快套件 498 + slow 2 = 500 passed、覆盖 91.35%；仓库推送至 git@github.com:Zhu-Guang-Scion/Duckseek.git（SSH 443 通道，22 端口被网络拒绝），远端 Initial commit 经变基整合保留为根（本地 14 笔重放其上，历史作者保留），远端 main = 2f78bb8（114 文件，含三样本 parquet/CI/skills/duckseek）；GitHub GH001 大文件警告对应 yellow 67.9MB 警告带（README 已声明）。CI workflow 已随推送触发，本地 env-unset 等价命令全绿 + YAML 校验通过；Actions 首跑页面待人类目检（私有库无 API 凭证）。
 - 2026-09-24 M6 立项（查询产物导出，人类批准：里程碑 6 裁定文档 v1·顾问修订版）：§2 Non-goals 移除「图表可视化」（MVP 已收官首次解禁）；§3 新增锁定决策 10（xlsx 原生图表 + manifest JSON 含 version 字段；LLM 判定图型 + 确定性校验器，v1 仅 bar/line/pie；无 matplotlib/PNG；MCP 经 ask 可选参数 export，工具面三只不动）；§4 M6 🟡。含顾问 2 必修（截断可见披露 / manifest version:1）+ 3 建议（v1 砍 scatter / 校验规则明确：pie 恰 1 measure、bar-line ≥1 且 dimension 非空 / tool_version 溯源）。openpyxl 自 dev 提升为主依赖。前置 O5 推送已满足。
+- 2026-09-24 M6 完成（查询产物导出，T20+V6，按 2026-09-20 人类裁定文档 v1·顾问修订版）：新顶层包 export/ （chart_spec.py LLM 判定 json_object 契约+确定性校验器——v1 仅 bar/line/pie、pie 恰 1 measure、dimension 须类别/时间型、measures 须数值型、top_n 封顶、scatter 拒绝留扩展位、chart_error 出口 scrub 六变量；xlsx.py data/meta/chart 三表——类型化单元格+冻结+autofilter、截断必附 ⚠ 醒目披露行、原生 openpyxl 图表画在导出切片；manifest.py version:1 契约面含 truncated/total_rows/exported_rows/tool_version）。入口：CLI ask --export xlsx 与交互 /export xlsx [目录]；MCP duckseek_ask 可选参数 export（缺省六键零回归测试钉死）。降级链：LLM 失败/校验不过→无图表导出+chart_error，导出永不被图表阻断；chart_llm=false 零 LLM 调用。产物 data/exports/<ts>_<hash>/ 双文件不自动清理。SKILL.md Step c 扩展（export 参数/artifacts 键/截断披露纪律，.zcode 副本 diff 同步）+ README 导出段。测试 15 项新增（xlsx 往返/校验器规则/三态降级/截断披露/spill 全量/scrub 金丝雀/CLI 两入口/MCP 两态/slow 真实件）；全量 513 passed 覆盖 91.61%、ruff 零告警。openpyxl 已升主依赖（G10 commit）。真实 LLM 抽查件待有效密钥时 slow 补验。

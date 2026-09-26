@@ -134,3 +134,13 @@ qa:
 eval:
   temperature: 0.0
   runs_per_case: 3
+
+# Query-artifact export (M6/T20, goals.md decision 10): opt-in xlsx+manifest
+# bundles under data/exports/<ts>_<hash>/; NOT auto-cleaned (manual cleanup —
+# artifacts face downstream systems). chart_llm=false degrades to plain data
+# export with no extra LLM call.
+export:
+  dir: data/exports
+  max_rows: 10000
+  chart_llm: true
+  top_n_default: 15

@@ -62,6 +62,7 @@ packages = [
     "exec",
     "eval",
     "mcp_server",
+    "export",
 ]
 
 [tool.setuptools.package-data]
@@ -87,6 +88,7 @@ known-first-party = [
     "exec",
     "eval",
     "mcp_server",
+    "export",
 ]
 
 [tool.pytest.ini_options]
@@ -107,6 +109,7 @@ source = [
     "exec",
     "eval",
     "mcp_server",
+    "export",
 ]
 branch = true
 

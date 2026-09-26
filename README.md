@@ -69,9 +69,23 @@ uv run nl2data index build
 
 # 5) 提问（答案附实际执行的 SQL）
 uv run nl2data ask "2026年3月黄色出租车的总订单量是多少？"
-# 交互模式（/retry [补充] /show sql /export csv <路径> /tables /exit）：
+# 交互模式（/retry [补充] /show sql /export csv <路径> /export xlsx [目录] /tables /exit）：
 uv run nl2data ask
 ```
+
+**导出产物（可选，M6）**：需要留档或在 Excel 继续加工时，同一次导出产出双文件——
+`result.xlsx`（数据表 + 元数据表 + LLM 判定的 Excel 原生图表，可在 Excel 中继续
+编辑）与 `manifest.json`（自描述机器清单，供其他程序/agent 读取）：
+
+```bash
+# CLI：单发附加 --export xlsx（产物落在 data/exports/<时间戳>_<hash>/）
+uv run nl2data ask "各个行政区的黄车订单量是多少？" --export xlsx
+# MCP：duckseek_ask 可选参数 export="xlsx"，返回载荷附 artifacts 路径键
+```
+
+导出为 opt-in（不传参数零额外调用）；行数超上限会截断且**必有披露**（xlsx meta
+表醒目行 + manifest 的 `truncated/total_rows/exported_rows`）；图表判定失败只降级
+不阻断（manifest 记录 `chart_error` 原因）。产物目录不自动清理，手动删除即可。
 
 **数据形态要求**：每个 sheet 需为单一表头的规整矩形表（表头行自动探测，前几行的
 标题行/空行自动跳过）；多级表头、合并单元格表头与一表多块的报表式 sheet 暂不支持，
