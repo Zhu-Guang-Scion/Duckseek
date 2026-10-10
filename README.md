@@ -2,10 +2,29 @@
 
 [![CI](https://github.com/Zhu-Guang-Scion/Duckseek/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Zhu-Guang-Scion/Duckseek/actions/workflows/ci.yml)
 
-**一句话简介**：DuckSeek（Python 包名 `nl2data`）是一个开源（Apache-2.0）的 CLI
-工具，让你用自然语言直接查询大体量（十万至千万行级）Excel / Access / Parquet
-数据——答案永远附带实际执行的 SQL，可人工核验。支持处理多表，表格行数上限取决于
-硬件性能。已附带 SKILL 和 MCP 接口——一个很有扩展潜力和想象力的接口。
+**一句话简介**：DuckSeek（Python 包名 `nl2data`）是一个开源（Apache-2.0）的
+**本地** CLI 工具，让你用自然语言直接查询大体量（十万至千万行级）Excel /
+Access / Parquet 数据——答案永远附带实际执行的 SQL，可人工核验。支持处理多表，
+表格行数上限取决于硬件性能。已附带 SKILL 和 MCP 接口——一个很有扩展潜力和
+想象力的接口。
+
+**隐私红线**：全程本地运行，被查询的数据**不出本机**——不上传任何云端或第三方
+平台；查询在只读沙箱中执行，数据从物理上不可被查询过程篡改；大模型只看到表
+结构卡片与压缩统计，**原始明细永不进入提示词**；无遥测。典型场景：审计底稿化
+的会计分录测试（JE Testing）、财务与业务数据探查——本地、零许可成本、每步可复算。
+
+> **DuckSeek** (Python package `nl2data`) is an open-source (Apache-2.0)
+> **local-first** CLI that answers natural-language questions over large
+> Excel / Access / Parquet datasets (100K–10M+ rows) — every answer ships with
+> the exact SQL executed, so results are human-verifiable.
+>
+> **Your data never leaves your machine.** Queries run in a read-only DuckDB
+> sandbox, the LLM only ever sees schema cards and compact statistics (never
+> raw rows), and there is no telemetry. Built for privacy-sensitive workflows —
+> audit & journal-entry testing, finance data exploration — where uploading
+> client ledgers to a cloud platform is not an option: local, zero license
+> cost, every step reproducible. ([English section](#english) ·
+> [中文全文](#架构))
 
 ## 架构
 
@@ -156,14 +175,17 @@ golden 集（`eval/recall_golden.yaml`，20 条真实问答三元组）与冻结
 
 **宁可误拒，不可漏放；拒绝必须给出可读原因。**
 
-1. **护栏层**：九条规则全走 sqlglot 解析树（注释/大小写/嵌套免疫）——语句白名单
+1. **数据主权**：全程本地执行——被查询文件与查询结果都不出本机；LLM 提示词
+   只含 schema 卡片与压缩统计画像，原始明细行永不进入；无遥测、无云端依赖
+   （与要求上传总账的云端审计平台的核心区别）；
+2. **护栏层**：九条规则全走 sqlglot 解析树（注释/大小写/嵌套免疫）——语句白名单
    （仅 SELECT/WITH）、表白名单、表函数一票否决、列存在性、LIMIT 注入 500/封顶
    10000；
-2. **沙箱层**：只接受护栏签发的 `ValidatedSQL` 类型 + DuckDB `read_only=True` +
-   守护线程超时——伪造入参在类型层即被拒；
-3. **红队制度**：累计 100+ 对抗样本（提示注入/SQL 注入/文件读取/CTE 藏写等），
+3. **沙箱层**：只接受护栏签发的 `ValidatedSQL` 类型 + DuckDB `read_only=True` +
+   守护线程超时——伪造入参在类型层即被拒，被审计数据物理上不可篡改；
+4. **红队制度**：累计 100+ 对抗样本（提示注入/SQL 注入/文件读取/CTE 藏写等），
    全部拦截后固化进测试套件；
-4. **密钥纪律**：API key 不写入任何文件/日志/异常消息/工具参数与返回值
+5. **密钥纪律**：API key 不写入任何文件/日志/异常消息/工具参数与返回值
    （专项测试断言）。
 
 ## 命名说明
@@ -193,6 +215,51 @@ golden 集（`eval/recall_golden.yaml`，20 条真实问答三元组）与冻结
 - [skills/duckseek/](skills/duckseek/) —— Skill 三件套（SKILL.md / 注册指南 / 凭证模板）
 - [docs/table_notes.md](docs/table_notes.md) —— 表级说明（注入卡片）
 - [eval/recall_golden.yaml](eval/recall_golden.yaml) —— golden 评测集
+
+## English
+
+**DuckSeek** (Python package `nl2data`) is an open-source (Apache-2.0),
+local-first CLI that answers natural-language questions over large tabular
+data — Excel (.xlsx/.xlsm), Access (.mdb/.accdb) and Parquet, tested up to
+millions of rows with Chinese column names. Every answer ships with the exact
+SQL that was executed, so any result can be independently re-verified.
+
+**Why local-first matters.** Cloud analytics platforms require uploading your
+data — a non-starter for client ledgers, audit evidence and other
+confidential datasets. DuckSeek keeps everything on your machine:
+
+- **Data sovereignty** — source files and query results never leave the host;
+  the LLM prompt only contains schema cards and compact statistics, never raw
+  rows; no telemetry.
+- **Read-only by construction** — SQL passes a sqlglot parse-tree guardrail
+  (statement whitelist, table whitelist, column existence, forced LIMIT) and
+  then runs on a `read_only=True` DuckDB sandbox; queried data cannot be
+  modified by the query itself.
+- **Verifiable** — 100+ red-team samples are pinned in the test suite; API
+  keys never touch files, logs, or tool arguments (enforced by tests).
+- **Zero license cost** — Apache-2.0, no vendor lock-in.
+
+Typical use: journal-entry testing and audit exploration, finance data
+analysis — anywhere "local, controllable, read-only, Chinese large files"
+are hard requirements.
+
+**Quick start** (Python ≥3.11, [uv](https://docs.astral.sh/uv/), six
+credential env vars — `LLM_*` and `EMB_*`, OpenAI-compatible APIs; the full
+Chinese guide above covers everything):
+
+```bash
+uv sync
+uv run nl2data ingest parquet samples/nyc-taxi/yellow_tripdata.parquet --name yellow_tripdata
+uv run nl2data profile --all && uv run nl2data cards build --all && uv run nl2data index build
+uv run nl2data ask "2026年3月黄色出租车的总订单量是多少？"   # answer + executed SQL
+```
+
+MCP hosts (Claude Code / Cursor / zcode …) drive it via
+`nl2data mcp serve` — three read-only tools: `duckseek_status` /
+`duckseek_list_tables` / `duckseek_ask`; see
+[skills/duckseek/README.md](skills/duckseek/README.md). Optional export
+produces an .xlsx (with a native, LLM-chosen chart) plus a self-describing
+`manifest.json` for downstream agents.
 
 ## 许可证
 
