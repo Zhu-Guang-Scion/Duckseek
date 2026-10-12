@@ -465,9 +465,14 @@ def _render_outcome(outcome: object) -> None:
     if outcome.vsql:
         console.print(f"[dim]实际执行的 SQL[/dim]\n```sql\n{outcome.vsql.sql}\n```")
     tokens = outcome.usage_delta.get("total_tokens", 0)
+    candidate_note = (
+        f" | 候选 {outcome.candidates_ok}/{outcome.candidates_tried}"
+        if outcome.candidates_tried > 1
+        else ""
+    )
     console.print(
         f"[dim]行数 {execution.rowcount} | 耗时 {execution.latency_ms:.0f}ms | "
-        f"tokens {tokens} | 尝试 {outcome.attempts} 次"
+        f"tokens {tokens} | 尝试 {outcome.attempts} 次{candidate_note}"
         + (
             f" | 明细 {execution.detail_ref}"
             if execution.detail_ref
@@ -475,6 +480,11 @@ def _render_outcome(outcome: object) -> None:
         )
         + "[/dim]"
     )
+    if outcome.candidates_disagree:
+        console.print(
+            "[yellow]⚠ 候选分歧:可执行候选的结果互不一致(无严格多数),"
+            "已取首组成果——建议核验 SQL 或换个问法复问[/yellow]"
+        )
     if execution.profile is None and execution.rows:
         from rich.table import Table
 

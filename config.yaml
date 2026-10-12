@@ -129,6 +129,11 @@ qa:
   # Max generate->validate->run round trips per question before giving up
   # and showing the last SQL plus the failure reason.
   max_attempts: 3
+  # M7/T21: parallel candidates + execution-consistency voting. 1 = legacy
+  # single-shot; candidates are sampled at candidate_temperature (public
+  # research validates 0.8-1.0; low temp collapses voting diversity).
+  candidate_count: 3
+  candidate_temperature: 0.8
 
 # Regression-eval LLM parameters (T15/G8): eval-time sampling determinism.
 eval:

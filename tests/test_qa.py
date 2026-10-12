@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pandas as pd
@@ -107,6 +108,9 @@ def test_ask_once_end_to_end_ok(
     assert outcome.ok
     assert outcome.attempts == 1
     assert outcome.execution.rowcount == 2
+    # Legacy single-shot path (candidate_count=1 default): accounting is exact.
+    assert (outcome.candidates_tried, outcome.candidates_ok) == (1, 1)
+    assert outcome.candidates_disagree is False
     assert outcome.vsql is not None and outcome.vsql.limit == 500
     assert set(outcome.retrieved_tables) == {"ding_dan"}
 
@@ -215,3 +219,135 @@ def test_ask_cli_single_shot(qa_env: Nl2DataConfig, monkeypatch) -> None:  # noq
     assert result.exit_code == 0
     assert "平均金额" in result.output
     assert "event(s)" in result.output
+
+
+# ------------------------------------------------- M7/T21 multi-candidate ----
+
+class _ThreadSafeFakeGenerate:
+    """Sequenced generate stub safe for parallel candidate threads."""
+
+    def __init__(self, returns: list[SQLGeneration]) -> None:
+        self.returns = list(returns)
+        self.lock = threading.Lock()
+
+    def __call__(
+        self,
+        question: str,
+        retrieval: RetrievalResult,
+        cfg: Nl2DataConfig,
+        feedback: str | None = None,
+    ) -> SQLGeneration:
+        with self.lock:
+            return self.returns.pop(0)
+
+    @property
+    def calls(self) -> list[str | None]:
+        return []
+
+
+def _multi_cfg(qa_config: Nl2DataConfig, count: int) -> Nl2DataConfig:
+    from dataclasses import replace
+
+    return replace(
+        qa_config, qa=replace(qa_config.qa, candidate_count=count)
+    )
+
+
+def test_multi_candidate_majority_picks_consistent_result(
+    qa_config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2/3 candidates agree on one result shape -> strict majority, no flag."""
+    fake = _ThreadSafeFakeGenerate([
+        _ok("SELECT count(*) AS n FROM ding_dan"),
+        _ok("SELECT count(*) AS total FROM ding_dan"),  # same result, other alias
+        _ok("SELECT count(*) AS n FROM ding_dan WHERE jin_e > 15"),  # diverges
+    ])
+    monkeypatch.setattr("nl2data.qa.generate", fake)
+    outcome = ask_once("多少订单", _multi_cfg(qa_config, 3), no_interpret=True)
+    assert outcome.ok
+    assert (outcome.candidates_tried, outcome.candidates_ok) == (3, 3)
+    assert outcome.candidates_disagree is False
+    assert outcome.execution.rows[0] in ({"n": 4}, {"total": 4})
+
+
+def test_multi_candidate_disagreement_is_disclosed(
+    qa_config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All three candidates produce different results -> first wins, flagged."""
+    fake = _ThreadSafeFakeGenerate([
+        _ok("SELECT count(*) AS a FROM ding_dan"),
+        _ok("SELECT sum(jin_e) AS b FROM ding_dan"),
+        _ok("SELECT avg(jin_e) AS c FROM ding_dan"),
+    ])
+    monkeypatch.setattr("nl2data.qa.generate", fake)
+    outcome = ask_once("随便算点什么", _multi_cfg(qa_config, 3), no_interpret=True)
+    assert outcome.ok
+    assert outcome.candidates_ok == 3
+    assert outcome.candidates_disagree is True
+    event = load_recent_events(qa_config, 1)[0]
+    assert event["candidates_tried"] == 3
+    assert event["candidates_ok"] == 3
+    assert event["candidates_disagree"] is True
+
+
+def test_multi_candidate_guard_failure_consumes_all_then_retries(
+    qa_config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All candidates rejected in round one -> feedback retry, then success."""
+    fake = _ThreadSafeFakeGenerate([
+        _ok("SELECT ghost FROM ding_dan"),
+        _ok("SELECT ghost2 FROM ding_dan"),
+        _ok("SELECT ghost3 FROM ding_dan"),
+        _ok("SELECT count(*) AS n FROM ding_dan"),
+        _ok("SELECT count(*) AS n FROM ding_dan"),
+        _ok("SELECT count(*) AS n FROM ding_dan"),
+    ])
+    monkeypatch.setattr("nl2data.qa.generate", fake)
+    outcome = ask_once("多少订单", _multi_cfg(qa_config, 3), no_interpret=True)
+    assert outcome.ok
+    assert outcome.attempts == 2
+    assert outcome.candidates_tried == 6
+    assert outcome.candidates_ok == 3
+    assert outcome.candidates_disagree is False
+
+
+def test_multi_candidate_clarification_majority(
+    qa_config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2/3 candidates ask for clarification -> clarification short-circuits."""
+    fake = _ThreadSafeFakeGenerate([
+        _clar("要哪个时间范围?"),
+        _clar("要哪个时间范围?"),
+        _ok("SELECT count(*) AS n FROM ding_dan"),
+    ])
+    monkeypatch.setattr("nl2data.qa.generate", fake)
+    outcome = ask_once("订单情况", _multi_cfg(qa_config, 3), no_interpret=True)
+    assert outcome.clarification == "要哪个时间范围?"
+    assert outcome.vsql is None and outcome.execution is None
+    assert outcome.candidates_tried == 3
+
+
+def test_multi_candidate_partial_llm_failure_tolerated(
+    qa_config: Nl2DataConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A candidate whose LLM call fails is dropped; survivors proceed."""
+    from llm.chat import LlmError
+
+    real = _ThreadSafeFakeGenerate([
+        _ok("SELECT count(*) AS n FROM ding_dan"),
+        _ok("SELECT count(*) AS n FROM ding_dan"),
+    ])
+
+    calls = {"n": 0}
+
+    def _flaky(question, retrieval, cfg, feedback=None):  # noqa: ANN001, ANN202
+        calls["n"] += 1
+        if calls["n"] == 1:  # first of three calls fails, survivors proceed
+            raise LlmError("api down", "api")
+        return real(question, retrieval, cfg, feedback=feedback)
+
+    monkeypatch.setattr("nl2data.qa.generate", _flaky)
+    outcome = ask_once("多少订单", _multi_cfg(qa_config, 3), no_interpret=True)
+    assert outcome.ok
+    assert outcome.candidates_tried == 2
+    assert outcome.candidates_disagree is False

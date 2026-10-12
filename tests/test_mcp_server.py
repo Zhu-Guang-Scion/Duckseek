@@ -307,7 +307,9 @@ def test_ask_contract_shape_and_no_interpretation(
         "elapsed_ms",
         "source_tables",
         "embedding_degraded",
+        "candidates_disagree",
     }
+    assert payload["candidates_disagree"] is False
     assert payload["row_count"] == 1
     assert payload["sql"].upper().startswith("SELECT COUNT(*)")
     assert payload["source_tables"] == ["ding_dan"]
@@ -379,7 +381,7 @@ def test_ask_export_xlsx_adds_artifacts(
     payload = drive(build_server(mcp_cfg), _calls)
     assert set(payload) == {
         "answer", "sql", "row_count", "elapsed_ms", "source_tables",
-        "embedding_degraded", "artifacts",
+        "embedding_degraded", "candidates_disagree", "artifacts",
     }
     artifacts = payload["artifacts"]
     assert Path(artifacts["xlsx"]).is_file()

@@ -49,7 +49,9 @@ DuckDB 或读 Parquet**：DuckSeek 侧有业务口径词典（glossary，例如"
 参数是一个自然语言问句（把必要的上下文并进问句里）；用户要留档或在 Excel
 继续加工时，可加可选参数 `export: "xlsx"`（默认不传，不传即零额外调用）：
 
-- 成功（默认）：`{answer, sql, row_count, elapsed_ms, source_tables, embedding_degraded}`；
+- 成功（默认）：`{answer, sql, row_count, elapsed_ms, source_tables, embedding_degraded, candidates_disagree}`；
+- `candidates_disagree=true` → 候选 SQL 结果互不一致（无严格多数），答案取首组成果——必须告知用户
+  「本次答案未经多数确认，建议核验 SQL 或换个问法复问」；
 - 成功（`export="xlsx"`）：另附 `artifacts` 键——`{xlsx, manifest, chart, chart_error}`，
   前两个是落盘文件的绝对路径（xlsx 含数据/元数据/原生图表，可继续编辑；
   manifest 是自描述 JSON，供程序读取），`chart` 为图表规格或 null（null 时

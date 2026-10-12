@@ -172,9 +172,19 @@ class SqlgenConfig:
 
 @dataclass(frozen=True)
 class QaConfig:
-    """Ask-loop parameters (milestone 3, T12)."""
+    """Ask-loop parameters (milestone 3, T12; M7/T21 multi-candidate).
+
+    ``candidate_count`` > 1 enables parallel candidate generation with
+    execution-consistency voting (M7-B): candidates are sampled at
+    ``candidate_temperature`` — the 0.8–1.0 range validated by public
+    research (DAIL-SQL/MCS-SQL/CSC-SQL; low temperature collapses
+    diversity and defeats voting) — while the single-shot path keeps the
+    pipeline LLM temperature. ``1`` restores the legacy single candidate.
+    """
 
     max_attempts: int = 3
+    candidate_count: int = 1
+    candidate_temperature: float = 0.8
 
 
 @dataclass(frozen=True)
@@ -421,6 +431,8 @@ def load_config(path: Path | None = None) -> Nl2DataConfig:
         ),
         qa=QaConfig(
             max_attempts=int(qa_section.get("max_attempts", 3)),
+            candidate_count=int(qa_section.get("candidate_count", 1)),
+            candidate_temperature=float(qa_section.get("candidate_temperature", 0.8)),
         ),
         eval=EvalConfig(
             temperature=float(eval_section.get("temperature", 0.0)),

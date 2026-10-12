@@ -249,6 +249,10 @@ def ask_payload(
         # used only when retrieval actually listed it — absent when EMB_* is
         # missing, the embedding call failed mid-query, or it scored no hits.
         "embedding_degraded": "vector" not in outcome.retrieval_channels,
+        # M7/T21: honest disclosure when executable candidates produced
+        # mutually inconsistent results (no strict majority) — the answer is
+        # the first candidate's result; recommend the user verify or re-ask.
+        "candidates_disagree": outcome.candidates_disagree,
     }
     if export:
         try:
@@ -298,11 +302,14 @@ def build_server(cfg: Nl2DataConfig) -> MCPServer:
         Runs retrieve → SQL generation → read-only guard → sandboxed
         execution. Returns ``answer`` (compact markdown of the result),
         ``sql`` (the executed statement, for verification), ``row_count``,
-        ``elapsed_ms``, ``source_tables`` and ``embedding_degraded`` (true
+        ``elapsed_ms``, ``source_tables``, ``embedding_degraded`` (true
         when this call's retrieval fell back to BM25-only — tell the user
-        and suggest providing EMB_* for best recall); interpret the answer
-        yourself. Ambiguous questions return ``needs_clarification`` with a
-        follow-up ``question`` to ask the user. Read-only; the SQL is
+        and suggest providing EMB_* for best recall) and
+        ``candidates_disagree`` (true when executable SQL candidates
+        produced inconsistent results — tell the user the answer lacks a
+        majority and suggest verifying the SQL or re-asking); interpret the
+        answer yourself. Ambiguous questions return ``needs_clarification``
+        with a follow-up ``question`` to ask the user. Read-only; the SQL is
         verified to be a single SELECT before it runs.
 
         Optional ``export="xlsx"`` (opt-in, nothing by default) writes an
