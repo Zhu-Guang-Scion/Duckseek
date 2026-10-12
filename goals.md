@@ -87,10 +87,11 @@
 - T20 export/ 三模块（chart_spec / xlsx / manifest）+ 配置 + CLI/MCP 双端入口（MCP 经 ask 可选参数 export 触发）—— 🟢
 - 完成判据：双端可导出含 LLM 判定图表的 xlsx + 自描述 manifest；截断必披露；降级链不阻断导出；T19 ask 六键契约零回归
   2026-09-24 V6 验收：CLI --export 与 /export xlsx、MCP 两态（带 export 附 artifacts 键/缺省恰六键防回归钉死）全部实测；截断披露（meta ⚠ 行 + manifest truncated/total/exported）与降级链（chart_llm 关闭零调用、LlmError scrub、校验不过诚实拒画）测试在案；顾问 2 必修 3 建议全落地（截断披露/version:1/砍 scatter/pie 恰 1 measure/tool_version 溯源）。质量门 ruff 零告警、513 passed 覆盖 91.61%。真实 LLM 抽查件测试就位（slow,密钥缺席自跳过）。
-**里程碑 7：准确率工程一期** —— 状态：🟡 进行中（实现完成；真实 A/B 评测待有效密钥）
+**里程碑 7：准确率工程一期** —— 状态：🟢 完成（2026-10-12 双轮 A/B 验收，V7 判据达成）
 - T21 多候选 SQL + 执行一致性选择器 —— 🟢（2026-09-26：并行候选温 0.8（调研修正）、护栏→执行→结果值多重集合多数决（G8b 判例：忽略列名别名）、candidates_disagree 七键披露、legacy count=1 等价；commit 379ed7c）
 - T22 维度表值注入 —— 🟢（2026-09-26：≤500 行全量注入 + 护栏指令行（值原文/勿臆造/找不到则澄清）+ token 封顶截断披露；parquet 列名双态兼容（零拷贝=原始名/转换=安全名）；taxi_zones 实测 215/265 行注入）
-- 完成判据：摆动清单 case 的多轮 eval 方差下降（真实 A/B，待有效密钥）；实体类 golden case 通过率提升；T19→七键契约迁移零回归 ✅（七键断言在案）
+- 完成判据：摆动清单 case 的多轮 eval 方差下降 ✅；实体类 golden case 通过率提升 ✅（行政区/机场类全过）；T19→七键契约迁移零回归 ✅（七键断言在案）
+  2026-10-12 V7 验收（双轮 A/B，均 5 分钟完成）：L1=1.000 / **L2=100%（历史首次，0.95→1.00）** / L3=0.75，两轮 20 case 判定**逐条完全一致**——多数决消除轮间摆动（旧配置 #7/#11/#16/#19 翻动，新配置 #11 稳定通过、#16 稳定 L2 过、#7/#19 稳定 fail 不再翻）；#19 第二轮 11.318 vs 11.32（百分数舍入差一步之遥）。#8 成稳定 fail（多列形状类，接棒 #11 进入风格类清单）。插曲：值注入曾致 L1 1.000→0.783（BM25 长度归一+向量漂移+打包挤表三连），双修复（检索通道剥离值段 220ae47 + 预算 3000→4000）实测复位 1.000。
 **里程碑 8：接入健壮性与溯源强化（JE 回馈落地）** —— 状态：🟢 完成（2026-10-12，源自 JE_Testing docs/21 回馈建议，人类指令执行）
 - PR-1 四项：①CSV 解码链 utf-8-sig→gbk→utf-8（ingest/encoding.py，access 字节流接入）；②.xls 老格式支持（xlrd 分支+表头探测兼容，xlrd 升主依赖）；③同名源内容门（源文件 sha256 记入 catalog；allow 默认=告警放行保 M1 幂等契约，reject=审计硬门，配置切换）；④枚举保真纪律测试钉死（大小写/尾空格逐字保留，jekit 类型码吞噬教训）
 - PR-2 两项：⑤canonical 行序无关多重集哈希（blake2b 逐行+交换律聚合，百万行流式；表级入 catalog）；⑨manifest 增 input_digest（逐表 canonical 指纹，未登记如实 null；version 仍 1——加键不改版本语义）
@@ -196,3 +197,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-26 M7 公开市场调研归档（人类委托「开发前调研、鼓励子智能体」，三路 Explore 并行，docs/research-m7-market.md）：多候选选择器——主流产品级引擎（vanna/DB-GPT/WrenAI/SuperSonic/Chat2DB）零实现执行投票，研究系（C3/DAIL-SQL/CHESS/MCS/CHASE/CSC-SQL）验证执行结果多数决为廉价基线；温度证据 0.8-1.0（原定温 0 被否定）。值链接——SuperSonic 词典+召回最完整；NeurIPS 2024「Death of Schema Linking」与 SIGMOD 2026 值链接对比支持小表全量注入优于检索。设计修正四处：候选专属温度 0.8、注入 token 上限 2000（原 1200）、检索总预算 3000（原 2000）、护栏指令入卡片层（不动 system.md）；中文别名列受 T5 禁 LLM 契约约束留 glossary 通路（待办）。
 - 2026-09-26 M7 实现完成（T21+T22，开发前按人类指示完成三路子智能体公开市场调研并修正四处设计——docs/research-m7-market.md）：T21 多候选执行一致性选择器（379ed7c）——qa.candidate_count=3 仓库配置（默认 1=legacy 等价已测）、候选专属温 0.8 并行生成、逐候选护栏+执行、结果值多重集合多数决（列名别名按 G8b 判例忽略）、无严格多数取首成功并披露 candidates_disagree（MCP 第七键+CLI 警示行+审计三字段）；T22 维度表值注入——cards.dim_value_max_rows=500/token_cap=2000、注入段携带护栏指令（值原文/勿臆造/找不到则澄清，卡片层实现不动 system.md）、截断必披露、parquet 列名原始名/安全名双态兼容；retrieval.token_budget 2000→3000；taxi_zones 实测注入 215/265 行（预算给事实卡留位的有意截断）。质量门 521 passed 覆盖 91.48%、ruff 零告警。挂起：真实 A/B 评测与索引重建（卡片已变，需 EMB 凭证跑 index build）待有效密钥。
 - 2026-10-12 M8 完成（JE 回馈落地，六项 #1#2#3#4#5#9）：CSV 多编码链、.xls 支持、源 sha256+同名内容门（allow/reject 策略可配，默认 allow 保幂等重导）、枚举保真纪律、canonical 行序无关哈希、manifest input_digest。§5.2 增量键两枚（sha256/canonical_sha256，向后兼容加载）。新增 tests/test_je_feedback.py 8 项；全量 529 passed 覆盖 91.64%、ruff 零告警。legacy.xls 存根改 .xlsb（.xls 转正后真件由 xlwt 现生成）。另：建 .env 模板（gitignored，人类填值）承接挂起的真实 A/B/索引重建/M6 抽查件。
+- 2026-10-12 V7/M7 收官：真实双轮 A/B（多候选 N=3 温 0.8 + 维度值注入 + 预算 4000）vs 冻结基线——两轮判定逐条一致，L2 100% 历史首次，L1 1.000，L3 0.75（构成移动：#11 摆动转稳定过、#8 转稳定败[风格类]、#16 L2 转过）；摆动方差消除。开发中实证一次注入反噬事故并双修复（检索通道剥离值段 strip_values_section + 打包预算 4000，commit 220ae47，回归测试钉死）。基线文件未动（维持 0.75 冻结，新构成为多候选条件下的稳定形态）。慢抽查件：M6 真实 LLM 出图通过（bar/各行政区黄车订单量 top5），三表现已带 sha256+canonical 指纹（同文件幂等重登补录），manifest input_digest 全量可溯。
