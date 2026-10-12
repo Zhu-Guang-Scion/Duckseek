@@ -87,8 +87,12 @@
 - T20 export/ 三模块（chart_spec / xlsx / manifest）+ 配置 + CLI/MCP 双端入口（MCP 经 ask 可选参数 export 触发）—— 🟢
 - 完成判据：双端可导出含 LLM 判定图表的 xlsx + 自描述 manifest；截断必披露；降级链不阻断导出；T19 ask 六键契约零回归
   2026-09-24 V6 验收：CLI --export 与 /export xlsx、MCP 两态（带 export 附 artifacts 键/缺省恰六键防回归钉死）全部实测；截断披露（meta ⚠ 行 + manifest truncated/total/exported）与降级链（chart_llm 关闭零调用、LlmError scrub、校验不过诚实拒画）测试在案；顾问 2 必修 3 建议全落地（截断披露/version:1/砍 scatter/pie 恰 1 measure/tool_version 溯源）。质量门 ruff 零告警、513 passed 覆盖 91.61%。真实 LLM 抽查件测试就位（slow,密钥缺席自跳过）。
-### 阶段二：准确率工程（MVP 验收后启动）
-多候选 SQL + 选择器、实体索引、Python 分析沙箱、查询缓存。
+**里程碑 7：准确率工程一期** —— 状态：🟡 进行中（2026-09-26 人类裁定立项，预研 docs/phase2-research.md）
+- T21 多候选 SQL + 执行一致性选择器（N=3 并行同温 0、护栏→执行→结果多重集合多数决、无多数时如实标注 candidates_disagree 并取首成功；qa.candidate_count 默认 1=旧行为，仓库配置 3）—— ⚪
+- T22 维度表值注入（≤500 行维度表全量值注入卡片，token 封顶 + 截断披露，补齐 zone 类实体值缺口）—— ⚪
+- 完成判据：摆动清单 case 的多轮 eval 方差下降（真实 A/B，待有效密钥）；实体类 golden case 通过率提升；T19→七键契约迁移零回归
+### 阶段二：准确率工程（MVP 验收后启动；2026-09-26 人类裁定 Python 分析沙箱除名：任意代码执行 vs SQL-only 双防线是架构级恶化且 619 问审计零需求，降级为按需再评估）
+多候选 SQL + 选择器、实体索引、查询缓存。
 
 ### 阶段三：团队开源（阶段二稳定后启动）
 Web UI + MCP Server、多用户最小集（只读强制、审计日志）、docker-compose、中英文文档。
@@ -183,3 +187,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-24 阶段二预研完成（docs/phase2-research.md，只读分析+既有数据实验，无实现无治理变更）：E1 审计分析 619 问——ok 91%、重试 3.4% 占 9.9% token、均值 4663 tok；E3 缓存回放拆分流量——真实交互仅 27 问、命中率 22%、全周期省 ~2.7 万 token（直觉中的 93% 命中几乎全为 eval 回放，eval 必须绕过缓存）；E2 实体覆盖——卡片仅枚举 borough/service_zone/store_fwd，zone 261 值缺席，golden 中文实体曼哈顿×4/布鲁克林×2/JFK。四方向建议：M7-A 维度表值注入（小维度表≤500 行全量值入卡片+glossary 跨语言，优先级 2）；M7-B 多候选+执行一致性选择器（N=3 多数决复用 eval 逻辑，对症摆动清单，优先级 1）；M7-C 查询缓存（形态成熟但个人规模收益边缘，优先级 3）；Python 沙箱建议除名/降阶段三（任意代码执行 vs SQL-only 双防线是架构级恶化，且 619 问零需求）——涉 §4 清单变更待人类裁定。报告含成本模型/接点/开放问题（N 与温度、分歧披露口径、维度表阈值）。
 - 2026-09-24 外部研究归档与裁定（anthropics/financial-services，Apache-2.0 同许可）：研究报告落盘 docs/research-anthropic-financial-services.md（结构地图/四写作范式/三层适用性判定/取用指引）。人类裁定：①两条 §7 待办立项（阶段三插件化打包 + SKILL.md 借鉴小改）；②金融技能体系暂不更新且不在 DuckSeek 仓库内工作；③报告归档备查。判定要点：MCP 连接器（外部市场数据源）与 agent 本体（文档工作流）对本项目无直接用途，可借鉴面为插件打包体系/技能写作范式/校验器思路。
 - 2026-09-24 仓库转公开（github.com/Zhu-Guang-Scion/Duckseek，visibility=public）：CI 实证收口——run #5（885b7fd 平台修复）起连续五轮 success（#6 workflow_dispatch、#7 README 数据形态、#8 M6 feature、#9 双语 README），此前 #1-#4 红色均为修复前历史快照；公开前密钥复扫 HEAD 树全零命中；README 已双语化并置顶数据主权/保密条（本地执行、明细永不进提示词、无遥测，JE Testing 口径反哺）。About 描述人类已设（含「适合审计及财务人员使用」定位句），topics 待贴（14 候选已提供：nl2sql/text-to-sql/duckdb/excel/parquet/local-first/privacy/data-sovereignty/audit/journal-entry-testing/mcp/llm/cli/chinese）。
+- 2026-09-26 M7 立项（准确率工程一期，人类裁定「按预研建议实行、沙箱除名、开始开发」）：§4 阶段二清单移除 Python 分析沙箱；里程碑 7 立项 T21（多候选+执行一致性选择器，开放问题取预研默认：N=3、同温 0、candidates_disagree 披露）与 T22（维度表值注入，阈值 500 行、token 封顶截断必披露）；M7-C 查询缓存暂缓（E3 证明个人规模收益边缘）。真实 A/B 评测待有效 LLM 密钥（同 M6 slow 抽查件挂起项）。
