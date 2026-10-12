@@ -12,12 +12,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from catalog.store import CatalogStore
 from exec.runner import ExecutionResult
 from export.chart_spec import ChartSpec, column_roles
 from nl2data import __version__
 
 #: Contract version; additive changes stay at 1, breaking changes bump.
 MANIFEST_VERSION = 1
+
+
+def _input_digest(source_tables: list[str], catalog_path: Path) -> dict[str, str | None]:
+    """Per-table canonical content digests from the catalog (JE #9).
+
+    Tables registered before the fingerprint field existed yield ``None``
+    rather than a lie — the digest is only claimed when it was computed.
+    """
+    store = CatalogStore(catalog_path)
+    digest: dict[str, str | None] = {}
+    for table in source_tables:
+        found = store.get_table(table)
+        digest[table] = found[1].canonical_sha256 if found else None
+    return digest
 
 
 def describe_columns(execution: ExecutionResult) -> list[dict[str, str]]:
@@ -51,6 +66,7 @@ def write_manifest(
     chart_spec: ChartSpec | None,
     chart_error: str | None,
     artifacts: dict[str, str],
+    catalog_path: Path,
 ) -> Path:
     """Assemble and write the manifest JSON; returns its path."""
     payload: dict[str, Any] = {
@@ -58,6 +74,7 @@ def write_manifest(
         "question": question,
         "sql": sql,
         "source_tables": source_tables,
+        "input_digest": _input_digest(source_tables, catalog_path),
         "columns": describe_columns(execution),
         "truncated": truncated,
         "total_rows": execution.rowcount,

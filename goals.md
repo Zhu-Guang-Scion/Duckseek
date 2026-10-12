@@ -91,6 +91,11 @@
 - T21 多候选 SQL + 执行一致性选择器 —— 🟢（2026-09-26：并行候选温 0.8（调研修正）、护栏→执行→结果值多重集合多数决（G8b 判例：忽略列名别名）、candidates_disagree 七键披露、legacy count=1 等价；commit 379ed7c）
 - T22 维度表值注入 —— 🟢（2026-09-26：≤500 行全量注入 + 护栏指令行（值原文/勿臆造/找不到则澄清）+ token 封顶截断披露；parquet 列名双态兼容（零拷贝=原始名/转换=安全名）；taxi_zones 实测 215/265 行注入）
 - 完成判据：摆动清单 case 的多轮 eval 方差下降（真实 A/B，待有效密钥）；实体类 golden case 通过率提升；T19→七键契约迁移零回归 ✅（七键断言在案）
+**里程碑 8：接入健壮性与溯源强化（JE 回馈落地）** —— 状态：🟢 完成（2026-10-12，源自 JE_Testing docs/21 回馈建议，人类指令执行）
+- PR-1 四项：①CSV 解码链 utf-8-sig→gbk→utf-8（ingest/encoding.py，access 字节流接入）；②.xls 老格式支持（xlrd 分支+表头探测兼容，xlrd 升主依赖）；③同名源内容门（源文件 sha256 记入 catalog；allow 默认=告警放行保 M1 幂等契约，reject=审计硬门，配置切换）；④枚举保真纪律测试钉死（大小写/尾空格逐字保留，jekit 类型码吞噬教训）
+- PR-2 两项：⑤canonical 行序无关多重集哈希（blake2b 逐行+交换律聚合，百万行流式；表级入 catalog）；⑨manifest 增 input_digest（逐表 canonical 指纹，未登记如实 null；version 仍 1——加键不改版本语义）
+- §5.2 契约增量键（加载容错、仅非空落盘）：sources[].sha256、tables[].canonical_sha256
+- 不采纳记录：#6 row_id/#7 参数化留痕（manifest 已含 sql+行数）/#8 usecols（通用场景不知用户所需列）/#10-12 低优先——理由见回馈文档
 ### 阶段二：准确率工程（MVP 验收后启动；2026-09-26 人类裁定 Python 分析沙箱除名：任意代码执行 vs SQL-only 双防线是架构级恶化且 619 问审计零需求，降级为按需再评估）
 多候选 SQL + 选择器、实体索引、查询缓存。
 
@@ -190,3 +195,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-26 M7 立项（准确率工程一期，人类裁定「按预研建议实行、沙箱除名、开始开发」）：§4 阶段二清单移除 Python 分析沙箱；里程碑 7 立项 T21（多候选+执行一致性选择器，开放问题取预研默认：N=3、同温 0、candidates_disagree 披露）与 T22（维度表值注入，阈值 500 行、token 封顶截断必披露）；M7-C 查询缓存暂缓（E3 证明个人规模收益边缘）。真实 A/B 评测待有效 LLM 密钥（同 M6 slow 抽查件挂起项）。
 - 2026-09-26 M7 公开市场调研归档（人类委托「开发前调研、鼓励子智能体」，三路 Explore 并行，docs/research-m7-market.md）：多候选选择器——主流产品级引擎（vanna/DB-GPT/WrenAI/SuperSonic/Chat2DB）零实现执行投票，研究系（C3/DAIL-SQL/CHESS/MCS/CHASE/CSC-SQL）验证执行结果多数决为廉价基线；温度证据 0.8-1.0（原定温 0 被否定）。值链接——SuperSonic 词典+召回最完整；NeurIPS 2024「Death of Schema Linking」与 SIGMOD 2026 值链接对比支持小表全量注入优于检索。设计修正四处：候选专属温度 0.8、注入 token 上限 2000（原 1200）、检索总预算 3000（原 2000）、护栏指令入卡片层（不动 system.md）；中文别名列受 T5 禁 LLM 契约约束留 glossary 通路（待办）。
 - 2026-09-26 M7 实现完成（T21+T22，开发前按人类指示完成三路子智能体公开市场调研并修正四处设计——docs/research-m7-market.md）：T21 多候选执行一致性选择器（379ed7c）——qa.candidate_count=3 仓库配置（默认 1=legacy 等价已测）、候选专属温 0.8 并行生成、逐候选护栏+执行、结果值多重集合多数决（列名别名按 G8b 判例忽略）、无严格多数取首成功并披露 candidates_disagree（MCP 第七键+CLI 警示行+审计三字段）；T22 维度表值注入——cards.dim_value_max_rows=500/token_cap=2000、注入段携带护栏指令（值原文/勿臆造/找不到则澄清，卡片层实现不动 system.md）、截断必披露、parquet 列名原始名/安全名双态兼容；retrieval.token_budget 2000→3000；taxi_zones 实测注入 215/265 行（预算给事实卡留位的有意截断）。质量门 521 passed 覆盖 91.48%、ruff 零告警。挂起：真实 A/B 评测与索引重建（卡片已变，需 EMB 凭证跑 index build）待有效密钥。
+- 2026-10-12 M8 完成（JE 回馈落地，六项 #1#2#3#4#5#9）：CSV 多编码链、.xls 支持、源 sha256+同名内容门（allow/reject 策略可配，默认 allow 保幂等重导）、枚举保真纪律、canonical 行序无关哈希、manifest input_digest。§5.2 增量键两枚（sha256/canonical_sha256，向后兼容加载）。新增 tests/test_je_feedback.py 8 项；全量 529 passed 覆盖 91.64%、ruff 零告警。legacy.xls 存根改 .xlsb（.xls 转正后真件由 xlwt 现生成）。另：建 .env 模板（gitignored，人类填值）承接挂起的真实 A/B/索引重建/M6 抽查件。

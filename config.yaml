@@ -24,6 +24,12 @@ ingest:
   max_name_length: 63
   # Rows scanned when auto-detecting the header row (title rows are skipped).
   header_scan_rows: 5
+  # JE feedback #3: re-registering a source slug from a file whose SHA-256
+  # differs from the recorded one — allow (default) proceeds with a loud
+  # warning keeping the idempotent re-ingest contract; reject is the
+  # audit-grade hard gate (content swaps under an existing name make
+  # downstream fingerprints unverifiable).
+  same_name_content_policy: allow
 
 # mdbtools binaries used by `nl2data ingest access` (must be on PATH or be
 # absolute paths). Access ingestion is unavailable without them.

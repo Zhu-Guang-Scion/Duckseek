@@ -25,6 +25,7 @@ import pyarrow.csv as pyarrow_csv
 from catalog.naming import clean_name
 from catalog.store import SourceEntry
 from ingest.common import SOURCE_TYPE_ACCESS, IngestError, PreparedTable, ingest_tables
+from ingest.encoding import decode_bytes
 from nl2data.config import Nl2DataConfig
 
 logger = logging.getLogger(__name__)
@@ -34,22 +35,24 @@ _STDERR_TAIL = 500
 # mdbtools error markers that mean the file itself cannot be read.
 _ENCRYPTED_PATTERN = re.compile(r"not a database|encrypt|crypt|unrecognized|corrupt", re.IGNORECASE)
 
-MdbRunner = Callable[..., subprocess.CompletedProcess[str]]
+MdbRunner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
 def _run_mdb(
     cmd: list[str],
     runner: MdbRunner,
     cfg: Nl2DataConfig,
-) -> subprocess.CompletedProcess[str]:
-    """Run one mdbtools command, mapping binary/timeout failures to IngestError."""
+) -> subprocess.CompletedProcess[bytes]:
+    """Run one mdbtools command, mapping binary/timeout failures to IngestError.
+
+    Output stays **bytes**: decoding is centralised in
+    :func:`ingest.encoding.decode_bytes` (utf-8-sig → gbk → utf-8) so exports
+    rendered in either encoding survive ingestion (JE feedback #1).
+    """
     try:
         return runner(
             cmd,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=cfg.mdbtools.timeout_seconds,
         )
     except FileNotFoundError as exc:
@@ -65,9 +68,9 @@ def _run_mdb(
         raise IngestError(msg) from exc
 
 
-def _stderr_tail(proc: subprocess.CompletedProcess[str]) -> str:
+def _stderr_tail(proc: subprocess.CompletedProcess[bytes]) -> str:
     """Return the trimmed tail of a completed process's stderr."""
-    return (proc.stderr or "").strip()[-_STDERR_TAIL:]
+    return decode_bytes(proc.stderr or b"").strip()[-_STDERR_TAIL:]
 
 
 def ingest_access(
@@ -118,7 +121,11 @@ def ingest_access(
     if proc.returncode != 0:
         msg = f"mdb-tables failed for {source} (exit {proc.returncode}): {_stderr_tail(proc)}"
         raise IngestError(msg)
-    names = [line.strip() for line in (proc.stdout or "").splitlines() if line.strip()]
+    names = [
+        line.strip()
+        for line in decode_bytes(proc.stdout or b"").splitlines()
+        if line.strip()
+    ]
     if not names:
         msg = f"mdb-tables listed no tables in {source}"
         raise IngestError(msg)
@@ -160,14 +167,15 @@ def ingest_access(
                 f"mdb-export failed for table {name!r} in {source} "
                 f"(exit {proc.returncode}): {_stderr_tail(proc)}"
             )
-            if _ENCRYPTED_PATTERN.search(proc.stderr or ""):
+            if _ENCRYPTED_PATTERN.search(decode_bytes(proc.stderr or b"")):
                 msg += ";文件可能已加密或损坏;不支持加密的 .accdb"
             raise IngestError(msg)
         # Dates stay strings on purpose: mdb-export already rendered date/time
         # columns with the -D/-T formats, so no further type promotion happens.
-        # newlines_in_values tolerates quoted fields spanning multiple lines.
+        # newlines_in_values tolerates quoted fields spanning multiple lines;
+        # decode_bytes centralises the utf-8-sig → gbk → utf-8 chain (JE #1).
         arrow_table = pyarrow_csv.read_csv(
-            io.BytesIO(proc.stdout.encode("utf-8")),
+            io.BytesIO(decode_bytes(proc.stdout).encode("utf-8")),
             parse_options=pyarrow_csv.ParseOptions(newlines_in_values=True),
         )
         frame = arrow_table.to_pandas()

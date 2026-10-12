@@ -1,10 +1,11 @@
-"""Excel (.xlsx/.xlsm) ingestion: sheet frames into the shared pipeline.
+"""Excel (.xlsx/.xlsm/.xls) ingestion: sheet frames into the shared pipeline.
 
-Reader strategy: the DuckDB ``excel`` extension is preferred (fast, typed
-reads); any failure falls back to ``pandas.read_excel`` (openpyxl engine) with
-a warning. Header rows are auto-detected by scanning the first
-``cfg.ingest.header_scan_rows`` rows with openpyxl (read-only), so report
-titles and blank leading rows never become column names.
+Reader strategy: the DuckDB ``excel`` extension is preferred for .xlsx/.xlsm
+(fast, typed reads); any failure falls back to ``pandas.read_excel`` (openpyxl
+engine) with a warning. Legacy binary ``.xls`` workbooks (openpyxl cannot read
+them; the dominant legacy format in Chinese enterprises and IDEA exports —
+JE feedback #2) go straight to pandas with the ``xlrd`` engine, including a
+xlrd-based header probe so report titles never become column names.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any
 
 import duckdb
 import pandas as pd
+import xlrd
 from openpyxl import load_workbook
 
 from catalog.naming import clean_name
@@ -24,7 +26,7 @@ from nl2data.config import Nl2DataConfig
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_SUFFIXES = frozenset({".xlsx", ".xlsm"})
+_SUPPORTED_SUFFIXES = frozenset({".xlsx", ".xlsm", ".xls"})
 _EXCEL_EXTENSION = "excel"
 _READ_XLSX_SQL = "SELECT * FROM read_xlsx(?, sheet = ?, header = true, stop_at_empty = false)"
 
@@ -79,7 +81,13 @@ def _load_excel_extension() -> bool:
 
 
 def _sheet_names(source: Path) -> list[str]:
-    """Return the workbook sheet names via a cheap read-only openpyxl pass."""
+    """Return the workbook sheet names (.xls via xlrd, else openpyxl)."""
+    if source.suffix.lower() == ".xls":
+        workbook = xlrd.open_workbook(str(source), on_demand=True)
+        try:
+            return list(workbook.sheet_names())
+        finally:
+            workbook.release_resources()
     workbook = load_workbook(source, read_only=True)
     try:
         return list(workbook.sheetnames)
@@ -89,6 +97,17 @@ def _sheet_names(source: Path) -> list[str]:
 
 def _probe_header_row(source: Path, sheet: str, scan_rows: int) -> int:
     """Scan the first ``scan_rows`` rows of ``sheet`` for the header row."""
+    if source.suffix.lower() == ".xls":
+        workbook = xlrd.open_workbook(str(source), on_demand=True)
+        try:
+            worksheet = workbook.sheet_by_name(sheet)
+            rows = [
+                list(worksheet.row_values(row_index))
+                for row_index in range(min(scan_rows, worksheet.nrows))
+            ]
+        finally:
+            workbook.release_resources()
+        return detect_header_row(rows, max_scan=scan_rows)
     workbook = load_workbook(source, read_only=True)
     try:
         worksheet = workbook[sheet]
@@ -163,12 +182,14 @@ def _read_sheet(
     """Read and clean one sheet; return None when it ends up empty.
 
     The DuckDB reader is only tried when the detected header row is the first
-    row (its ``header=true`` contract); any ``duckdb.Error`` such as the
-    Binder Error raised for empty sheets falls back to pandas with a warning.
+    row (its ``header=true`` contract) and never for legacy ``.xls`` (the
+    extension reads xlsx only); any ``duckdb.Error`` such as the Binder Error
+    raised for empty sheets falls back to pandas with a warning.
     """
     header_row = _probe_header_row(source, sheet, cfg.ingest.header_scan_rows)
     frame: pd.DataFrame | None = None
-    if extension_available and header_row == 0:
+    is_xls = source.suffix.lower() == ".xls"
+    if extension_available and header_row == 0 and not is_xls:
         try:
             frame = _read_sheet_via_duckdb(source, sheet)
         except duckdb.Error as exc:
@@ -179,7 +200,12 @@ def _read_sheet(
                 exc,
             )
     if frame is None:
-        frame = pd.read_excel(source, sheet_name=sheet, engine="openpyxl", header=header_row)
+        frame = pd.read_excel(
+            source,
+            sheet_name=sheet,
+            engine="xlrd" if is_xls else "openpyxl",
+            header=header_row,
+        )
     frame = _postprocess(frame, sheet=sheet)
     if frame.empty:
         logger.warning("sheet %r in %s is empty after cleanup; skipped", sheet, source)
@@ -193,15 +219,16 @@ def ingest_excel(
     sheet: str | None = None,
     name: str | None = None,
 ) -> SourceEntry:
-    """Ingest an ``.xlsx``/``.xlsm`` workbook through the shared pipeline.
+    """Ingest an ``.xlsx``/``.xlsm``/``.xls`` workbook through the shared pipeline.
 
     Every non-empty sheet becomes one table: the header row is auto-detected,
     the sheet is read via the DuckDB excel extension when available (pandas
-    fallback otherwise), then handed to :func:`ingest.common.ingest_tables`,
-    which owns naming, Parquet storage, DuckDB views and catalog lineage.
+    fallback otherwise; legacy ``.xls`` always uses the pandas/xlrd path),
+    then handed to :func:`ingest.common.ingest_tables`, which owns naming,
+    Parquet storage, DuckDB views and catalog lineage.
 
     Args:
-        source: Workbook path; suffix must be ``.xlsx`` or ``.xlsm``.
+        source: Workbook path; suffix must be ``.xlsx``/``.xlsm``/``.xls``.
         cfg: Active configuration.
         sheet: Exact sheet name to ingest; ``None`` ingests every sheet.
         name: Optional source alias overriding the file stem for the slug.
@@ -211,7 +238,7 @@ def ingest_excel(
 
     Raises:
         IngestError: If the file is missing, its suffix is unsupported
-            (``.xls``/``.xlsb``/``.numbers`` are not supported), the requested
+            (``.xlsb``/``.numbers`` are not supported), the requested
             sheet does not exist, or no non-empty sheet remains.
     """
     source = Path(source)
@@ -222,7 +249,7 @@ def ingest_excel(
     if suffix not in _SUPPORTED_SUFFIXES:
         msg = (
             f"unsupported Excel file {source.name!r} (suffix {suffix!r}); "
-            "supported: .xlsx/.xlsm (.xls/.xlsb/.numbers are not supported)"
+            "supported: .xlsx/.xlsm/.xls (.xlsb/.numbers are not supported)"
         )
         raise IngestError(msg)
 

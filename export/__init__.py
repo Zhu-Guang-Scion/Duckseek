@@ -96,6 +96,7 @@ def run_export(
             "xlsx": str(xlsx_path.resolve()),
             "manifest": str(manifest_path.resolve()),
         },
+        catalog_path=cfg.paths.catalog,
     )
     return ExportResult(
         dir=out_dir,

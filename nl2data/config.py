@@ -47,10 +47,29 @@ class PathsConfig:
 
 @dataclass(frozen=True)
 class IngestConfig:
-    """Ingestion behaviour."""
+    """Ingestion behaviour.
+
+    ``same_name_content_policy`` (JE feedback #3): what happens when a source
+    slug is re-registered from a file whose SHA-256 differs from the recorded
+    one. ``allow`` (default, general tool) keeps the legacy idempotent
+    re-ingest and logs a prominent warning with both hashes; ``reject`` is
+    the audit-grade hard gate — silent content swaps under an existing name
+    break every fingerprint anchored downstream, so re-registration is
+    refused until the source is renamed or the old entry archived.
+    """
 
     max_name_length: int = 63
     header_scan_rows: int = 5
+    same_name_content_policy: str = "allow"
+
+
+def _parse_same_name_policy(value: Any) -> str:
+    """Normalize the ingest policy switch; unknown values fail loudly."""
+    policy = str(value).strip().lower()
+    if policy not in {"allow", "reject"}:
+        msg = f"ingest.same_name_content_policy must be 'allow' or 'reject', got {value!r}"
+        raise ConfigError(msg)
+    return policy
 
 
 @dataclass(frozen=True)
@@ -367,6 +386,9 @@ def load_config(path: Path | None = None) -> Nl2DataConfig:
         ingest=IngestConfig(
             max_name_length=int(ingest_section.get("max_name_length", 63)),
             header_scan_rows=int(ingest_section.get("header_scan_rows", 5)),
+            same_name_content_policy=_parse_same_name_policy(
+                ingest_section.get("same_name_content_policy", "allow")
+            ),
         ),
         mdbtools=MdbToolsConfig(
             mdb_tables_cmd=str(mdb_section.get("mdb_tables_cmd", "mdb-tables")),

@@ -55,9 +55,9 @@ def test_sheet_filter_and_unknown_sheet(config: Nl2DataConfig) -> None:
 
 
 def test_rejects_unsupported_and_missing_files(config: Nl2DataConfig) -> None:
-    """Legacy suffixes and missing paths raise IngestError."""
-    with pytest.raises(IngestError, match=r"\.xls"):
-        ingest_excel(FIXTURES / "legacy.xls", config)
+    """Unsupported binary suffixes (.xlsb/.numbers) and missing paths raise."""
+    with pytest.raises(IngestError, match=r"\.xlsb"):
+        ingest_excel(FIXTURES / "legacy.xlsb", config)
     with pytest.raises(IngestError, match="not found"):
         ingest_excel(FIXTURES / "does_not_exist.xlsx", config)
 

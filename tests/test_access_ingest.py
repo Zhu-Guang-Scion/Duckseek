@@ -42,11 +42,12 @@ def _make_runner(
     tables_stdout: str | None = None,
     *,
     export_by_table: dict[str, str] | None = None,
-) -> tuple[Callable[..., subprocess.CompletedProcess[str]], list[list[str]]]:
+) -> tuple[Callable[..., subprocess.CompletedProcess[bytes]], list[list[str]]]:
     """Build a fake mdbtools runner plus the list of commands it received.
 
     Dispatch mirrors the real CLI: ``cmd[0]`` ends with ``mdb-tables`` or
     ``mdb-export``; the exported table name is the last positional argument.
+    Output is bytes, like the real subprocess in non-text mode.
     """
     exports = {
         "orders": _fixture_text("orders_export.csv"),
@@ -54,18 +55,19 @@ def _make_runner(
     }
     if export_by_table:
         exports.update(export_by_table)
+    exports = {name: text.encode("utf-8") for name, text in exports.items()}
     calls: list[list[str]] = []
 
-    def _run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def _run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         calls.append(cmd)
         if cmd[0].endswith("mdb-tables"):
-            stdout = (
+            text = (
                 tables_stdout if tables_stdout is not None else _fixture_text("tables_list.txt")
             )
-            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout=text.encode("utf-8"), stderr=b"")
         if cmd[0].endswith("mdb-export"):
             return subprocess.CompletedProcess(
-                cmd, 0, stdout=exports.get(cmd[-1], ""), stderr=""
+                cmd, 0, stdout=exports.get(cmd[-1], b""), stderr=b""
             )
         msg = f"unexpected mdbtools command: {cmd}"
         raise AssertionError(msg)
@@ -200,8 +202,8 @@ def test_tables_command_failure_reports_stderr(config: Nl2DataConfig, tmp_path: 
 
     def failing_tables(
         cmd: list[str], **kwargs: object
-    ) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+    ) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(cmd, 1, stdout=b"", stderr=b"boom")
 
     with pytest.raises(IngestError, match="boom"):
         ingest_access(_make_mdb(tmp_path), config, runner=failing_tables)
@@ -212,12 +214,12 @@ def test_encrypted_export_hint(config: Nl2DataConfig, tmp_path: Path) -> None:
 
     def encrypted_export(
         cmd: list[str], **kwargs: object
-    ) -> subprocess.CompletedProcess[str]:
+    ) -> subprocess.CompletedProcess[bytes]:
         if cmd[0].endswith("mdb-tables"):
             return subprocess.CompletedProcess(
-                cmd, 0, stdout=_fixture_text("tables_list.txt"), stderr=""
+                cmd, 0, stdout=_fixture_text("tables_list.txt").encode("utf-8"), stderr=b""
             )
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Error: file is encrypted")
+        return subprocess.CompletedProcess(cmd, 1, stdout=b"", stderr=b"Error: file is encrypted")
 
     with pytest.raises(IngestError, match="加密") as exc_info:
         ingest_access(_make_mdb(tmp_path), config, runner=encrypted_export)
@@ -227,7 +229,7 @@ def test_encrypted_export_hint(config: Nl2DataConfig, tmp_path: Path) -> None:
 def test_timeout_raises(config: Nl2DataConfig, tmp_path: Path) -> None:
     """A hanging mdbtools call is converted into IngestError."""
 
-    def timing_out(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def timing_out(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         raise subprocess.TimeoutExpired(cmd="x", timeout=5)
 
     with pytest.raises(IngestError, match="timed out"):

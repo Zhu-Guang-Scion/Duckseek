@@ -29,7 +29,7 @@ Access / Parquet 数据——答案永远附带实际执行的 SQL，可人工�
 ## 架构
 
 ```
-文件(.xlsx/.xlsm/.mdb/.accdb/.parquet)
+文件(.xlsx/.xlsm/.xls/.mdb/.accdb/.parquet)
    │  ingest(零拷贝 Parquet 注册 / 转换落盘)
    ▼
 data/parquet/<source>/<table>.parquet ──► data/warehouse.duckdb(表以 VIEW 注册)
@@ -76,8 +76,8 @@ export EMB_MODEL="your-embedding-model"
 git clone https://github.com/Zhu-Guang-Scion/Duckseek.git && cd Duckseek
 uv sync                                   # 创建 .venv 并安装依赖（锁定于 uv.lock）
 
-# 1) 接入数据（三种来源任选；零拷贝注册或转换落盘；表名 = 文件名，clean_name 规则）
-uv run nl2data ingest excel  path/to/订单.xlsx            # 多 sheet → 每 sheet 一表
+# 1) 接入数据（三种来源任选；零拷贝注册或转换落盘；表名 = 文件名，clean_name 规则；.xlsx/.xlsm/.xls）
+uv run nl2data ingest excel  path/to/订单.xlsx            # 多 sheet → 每 sheet 一表（.xls 走 xlrd,含表头探测）
 uv run nl2data ingest access path/to/legacy.mdb            # 需 mdbtools（Linux/macOS/WSL）
 uv run nl2data ingest parquet samples/nyc-taxi/yellow_tripdata.parquet --name yellow_tripdata
 
@@ -220,7 +220,7 @@ golden 集（`eval/recall_golden.yaml`，20 条真实问答三元组）与冻结
 
 **DuckSeek** (Python package `nl2data`) is an open-source (Apache-2.0),
 local-first CLI that answers natural-language questions over large tabular
-data — Excel (.xlsx/.xlsm), Access (.mdb/.accdb) and Parquet, tested up to
+data — Excel (.xlsx/.xlsm/.xls), Access (.mdb/.accdb) and Parquet, tested up to
 millions of rows with Chinese column names. Every answer ships with the exact
 SQL that was executed, so any result can be independently re-verified.
 

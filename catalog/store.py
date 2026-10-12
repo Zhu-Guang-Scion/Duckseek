@@ -4,8 +4,13 @@ Locked schema::
 
     sources[]:
       name, type, path, ingested_at,
+      sha256?                 # source-file SHA-256 (JE feedback #3; additive)
       tables[]: name, original_name, parquet, rows,
+                canonical_sha256?   # row-order-independent content hash (#5)
                 columns[]: name, original_name
+
+Additive fingerprint keys are optional on load and emitted only when set,
+so catalogs written by older versions keep loading unchanged.
 """
 
 from __future__ import annotations
@@ -38,6 +43,8 @@ class TableEntry:
     parquet: str
     rows: int
     columns: list[ColumnEntry] = field(default_factory=list)
+    # Row-order-independent content fingerprint (JE feedback #5).
+    canonical_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,8 @@ class SourceEntry:
     path: str
     ingested_at: str
     tables: list[TableEntry] = field(default_factory=list)
+    # Source-file SHA-256, anchoring the ingestion evidence chain (#3).
+    sha256: str | None = None
 
 
 class CatalogStore:
@@ -90,6 +99,7 @@ class CatalogStore:
                         ColumnEntry(name=col["name"], original_name=col["original_name"])
                         for col in table.get("columns", [])
                     ],
+                    canonical_sha256=table.get("canonical_sha256"),
                 )
                 for table in source.get("tables", [])
             ]
@@ -99,6 +109,7 @@ class CatalogStore:
                 path=source["path"],
                 ingested_at=source["ingested_at"],
                 tables=tables,
+                sha256=source.get("sha256"),
             )
             self._sources[entry.name] = entry
 
@@ -120,30 +131,36 @@ class CatalogStore:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to the plain dict shape of the §5.2 contract."""
-        return {
-            "sources": [
+        sources: list[dict[str, Any]] = []
+        for source in self._sources.values():
+            item: dict[str, Any] = {
+                "name": source.name,
+                "type": source.type,
+                "path": source.path,
+                "ingested_at": source.ingested_at,
+            }
+            if source.sha256:
+                item["sha256"] = source.sha256
+            item["tables"] = [
                 {
-                    "name": source.name,
-                    "type": source.type,
-                    "path": source.path,
-                    "ingested_at": source.ingested_at,
-                    "tables": [
-                        {
-                            "name": table.name,
-                            "original_name": table.original_name,
-                            "parquet": table.parquet,
-                            "rows": table.rows,
-                            "columns": [
-                                {"name": col.name, "original_name": col.original_name}
-                                for col in table.columns
-                            ],
-                        }
-                        for table in source.tables
+                    "name": table.name,
+                    "original_name": table.original_name,
+                    "parquet": table.parquet,
+                    "rows": table.rows,
+                    **(
+                        {"canonical_sha256": table.canonical_sha256}
+                        if table.canonical_sha256
+                        else {}
+                    ),
+                    "columns": [
+                        {"name": col.name, "original_name": col.original_name}
+                        for col in table.columns
                     ],
                 }
-                for source in self._sources.values()
+                for table in source.tables
             ]
-        }
+            sources.append(item)
+        return {"sources": sources}
 
     def save(self) -> None:
         """Write catalog.yaml (UTF-8, key order preserved)."""

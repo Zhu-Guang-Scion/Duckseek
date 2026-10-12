@@ -15,6 +15,11 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from catalog.fingerprint import (
+    canonical_sha256_frame,
+    canonical_sha256_parquet,
+    file_sha256,
+)
 from catalog.naming import clean_name
 from catalog.store import CatalogStore, ColumnEntry, SourceEntry, TableEntry
 from nl2data.config import Nl2DataConfig
@@ -140,6 +145,53 @@ def _drop_previous_artifacts(
             logger.info("dropped stale artifacts for table %s", old_table.name)
 
 
+def _guard_same_name_content(
+    store: CatalogStore,
+    source_name: str,
+    source_path: Path,
+    cfg: Nl2DataConfig,
+) -> str | None:
+    """Same-name re-registration gate (JE feedback #3).
+
+    The source-file SHA-256 is always recorded when readable. When it differs
+    from the previous registration the ``ingest.same_name_content_policy``
+    decides: ``allow`` (default, general tool) proceeds with a prominent
+    warning carrying both hashes; ``reject`` (audit grade) refuses — silent
+    content swaps under an existing name make every downstream fingerprint
+    unverifiable (the Otter incident). A previous entry that carries a
+    digest but whose source file is now unreadable can no longer be identity
+    checked and is always refused under ``reject``.
+    """
+    previous = store.get_source(source_name)
+    policy = cfg.ingest.same_name_content_policy
+    if not source_path.is_file():
+        if previous is not None and previous.sha256 and policy == "reject":
+            msg = (
+                f"同名源 {source_name!r} 已带指纹登记,但当前源文件不可读 "
+                f"({source_path})——无法验证内容一致性,reject 策略下拒绝重登记。"
+            )
+            raise IngestError(msg)
+        logger.warning("source file not readable; fingerprint skipped: %s", source_path)
+        return None
+    digest = file_sha256(source_path)
+    if previous is not None and previous.sha256 and previous.sha256 != digest:
+        detail = (
+            f"source {source_name!r} 已登记自 {previous.path} "
+            f"(sha256 {previous.sha256[:12]}…),当前文件哈希不同 ({digest[:12]}…)。"
+        )
+        if policy == "reject":
+            msg = (
+                f"同名源内容变更被拒绝:{detail}"
+                "如需登记新内容请更换源名,或先归档/移除旧登记——"
+                "静默覆盖会使既有指纹不可复验。"
+            )
+            raise IngestError(msg)
+        logger.warning(
+            "同名源内容变更,按 allow 策略放行(审计场景应设 reject):%s", detail
+        )
+    return digest
+
+
 def ingest_tables(
     *,
     source_name: str,
@@ -174,6 +226,7 @@ def ingest_tables(
         raise IngestError(f"no non-empty tables found in {source_path}")
 
     store = CatalogStore(cfg.paths.catalog)
+    source_digest = _guard_same_name_content(store, source_name, source_path, cfg)
     previous = store.get_source(source_name)
     if previous is not None and previous.path != str(source_path):
         logger.warning(
@@ -221,6 +274,7 @@ def ingest_tables(
                     parquet=_recorded_parquet_path(parquet_path, cfg),
                     rows=int(len(frame)),
                     columns=columns,
+                    canonical_sha256=canonical_sha256_frame(frame),
                 )
             )
     finally:
@@ -233,6 +287,7 @@ def ingest_tables(
         path=str(source_path),
         ingested_at=datetime.now(UTC).isoformat(timespec="seconds"),
         tables=entries,
+        sha256=source_digest,
     )
     store.upsert_source(entry)
     store.save()
@@ -273,6 +328,7 @@ def register_tables(
         raise IngestError(f"no tables to register from {source_path}")
 
     store = CatalogStore(cfg.paths.catalog)
+    source_digest = _guard_same_name_content(store, source_name, source_path, cfg)
     previous = store.get_source(source_name)
     if previous is not None and previous.path != str(source_path):
         logger.warning(
@@ -323,6 +379,7 @@ def register_tables(
                     parquet=str(table.parquet_path),
                     rows=int(table.rows),
                     columns=columns,
+                    canonical_sha256=canonical_sha256_parquet(table.parquet_path),
                 )
             )
     finally:
@@ -335,6 +392,7 @@ def register_tables(
         path=str(source_path),
         ingested_at=datetime.now(UTC).isoformat(timespec="seconds"),
         tables=entries,
+        sha256=source_digest,
     )
     store.upsert_source(entry)
     store.save()
