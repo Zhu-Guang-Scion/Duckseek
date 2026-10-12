@@ -1,3 +1,6 @@
+# Credential environment file (human-filled; never commit)
+.env
+
 # Project artifacts (never commit generated data)
 data/
 *.duckdb
