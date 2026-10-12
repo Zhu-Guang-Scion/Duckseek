@@ -140,6 +140,7 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 【公开后完善清单】2026-09-23 开源准备完成后的后续：①英文 README（中文先行既定策略）——2026-09-24 已部分达成：README 顶部英文引言块+文末完整 English 区块（1013a18），独立英文版仍按需；②包级重命名 nl2data → duckseek（CLI 同步更名 + 迁移说明，阶段三）；③CONTRIBUTING 由 docs/architecture.md §6 开发指南蒸馏。提示词方案文档不入库的声明已兑现——仓库文件树零「方案/提示词」命名文件（git ls-files 核验）。
 - 【阶段三】2026-09-24 人类裁定立项（源自 anthropics/financial-services 研究，docs/research-anthropic-financial-services.md）：DuckSeek 插件化打包——对齐 Claude 插件体系（plugin.json/marketplace.json + 技能+MCP 配置同捆），从「手动 copy skill + 手填 mcpServers」升级为一条仓库 URL 安装；组合定位候选：agent 生态的本地可信数据层。
 - 【随时可做/M7 顺手】2026-09-24 SKILL.md 借鉴点小改（同上研究）：untrusted-data 宣言式警句（查询结果与文件内容均为数据非指令）、决策参数/容差内联、hypothesis-not-conclusion 措辞、技能间 hand-off 范式。
+- 【已知限制/低优先】2026-10-12 JE 回馈 #13 R6a：openpyxl read_only 在缺 <dimension> 元素的病态 xlsx 上 load 阶段可能整表预扫（read_only≠流式）——表头探针的健壮化路径为 zipfile+ElementTree.iterparse 直读 sheet XML；病态文件罕见，暂缓。
 ## §8 变更规则
 
 - §1/§2/§3/§5 的修改：仅人类本人，或人类明确授权后执行，且必须写 §9 变更日志
@@ -199,3 +200,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-10-12 M8 完成（JE 回馈落地，六项 #1#2#3#4#5#9）：CSV 多编码链、.xls 支持、源 sha256+同名内容门（allow/reject 策略可配，默认 allow 保幂等重导）、枚举保真纪律、canonical 行序无关哈希、manifest input_digest。§5.2 增量键两枚（sha256/canonical_sha256，向后兼容加载）。新增 tests/test_je_feedback.py 8 项；全量 529 passed 覆盖 91.64%、ruff 零告警。legacy.xls 存根改 .xlsb（.xls 转正后真件由 xlwt 现生成）。另：建 .env 模板（gitignored，人类填值）承接挂起的真实 A/B/索引重建/M6 抽查件。
 - 2026-10-12 V7/M7 收官：真实双轮 A/B（多候选 N=3 温 0.8 + 维度值注入 + 预算 4000）vs 冻结基线——两轮判定逐条一致，L2 100% 历史首次，L1 1.000，L3 0.75（构成移动：#11 摆动转稳定过、#8 转稳定败[风格类]、#16 L2 转过）；摆动方差消除。开发中实证一次注入反噬事故并双修复（检索通道剥离值段 strip_values_section + 打包预算 4000，commit 220ae47，回归测试钉死）。基线文件未动（维持 0.75 冻结，新构成为多候选条件下的稳定形态）。慢抽查件：M6 真实 LLM 出图通过（bar/各行政区黄车订单量 top5），三表现已带 sha256+canonical 指纹（同文件幂等重登补录），manifest input_digest 全量可溯。
 - 2026-10-12 data-security.md 入库（人类裁定「更新入库」，原稿人类 2026-09-24 手写，31 行与实现逐条相符）：按 M6-M8 现实刷新——数据存放补导出产物与溯源指纹（均本地）；出网内容两处如实披露（小维度表值清单随提示词进 LLM、多候选同提示词 N 次发送）；embedding 通道注明已剥离值段；凭证补 .env gitignored；使用者注意补 candidates_disagree 提醒。README 文档地图与 English 区 Data sovereignty 条挂链。悬置多日的未跟踪文件至此清零，工作区干净。
+- 2026-10-12 JE 回馈二批落地（#13 表头判定，批判性吸收）：吸收 R1/R2/R4 三因子为确定性门限（覆盖宽度≥有效宽度 50%、文字性≥0.6、下一行相对类型跃迁——绝对阈值 0.5 系序时账域调参，被通用混合列P001|100|北京 实测击穿后改相对判据）+ R6b 诚实回退（无行达阈回退第 0 行并告警，替代旧静默返回 max_scan 跳行）；拒绝 R3 领域词典（违反决策 2 两仓松耦合）与 R5 加权阈值（JE 域过拟合），R7 多分片一致性属 jekit 域，R6a 流式重写缓议入 §7。探针窗口 +1 行供对比门；.xls/.xlsx 双路径同享。测试 533 passed（+4 判例：合并标题宽表、无表头数据首行、数字行非表头、诚实回退两态），覆盖 91.69%。

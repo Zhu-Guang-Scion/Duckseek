@@ -155,12 +155,28 @@ def test_all_null_column_is_kept_as_varchar(config: Nl2DataConfig) -> None:
         pytest.param([["订单ID", "金额"], [1, 10]], 0, id="header-first"),
         pytest.param([["月报标题"], ["订单ID", "金额"], [1, 10]], 1, id="title-row"),
         pytest.param([[None, None], ["编号", "数量"], [1, 2]], 1, id="blank-first-row"),
-        pytest.param([["t1"], ["t2"], ["t3"], ["t4"], ["t5"]], 5, id="consecutive-titles-hit-cap"),
-        pytest.param([], 5, id="no-rows"),
+        # JE feedback #13 R6b: nothing qualifies → honest fallback to row 0
+        # with a warning (the old contract silently returned max_scan=5 and
+        # skipped five real rows).
+        pytest.param([["t1"], ["t2"], ["t3"], ["t4"], ["t5"]], 0, id="consecutive-titles-fallback"),
+        pytest.param([], 0, id="no-rows"),
+        # R1 coverage: a sparse merged title (2 cells over a 6-column table)
+        # fails the coverage gate even though it has ≥2 non-empty cells.
+        pytest.param(
+            [["大标题", "副标题", None, None, None, None],
+             ["日期", "凭证号", "摘要", "借方", "贷方", "余额"],
+             ["2026-01-01", "P001", "报销", 100, 200, 300]],
+            1, id="merged-title-over-wide-table",
+        ),
+        # R4 contrast (relative): the data-first sheet has no wordy row, so
+        # nothing qualifies and the fallback warns.
+        pytest.param([[1, 2], [3, 4]], 0, id="data-first-no-header"),
+        # R2 textiness: a numeric "header" row is not words.
+        pytest.param([["1001", "1002"], ["科目", "余额"]], 1, id="numeric-row-not-header"),
     ],
 )
 def test_detect_header_row(rows: list[list[object]], expected: int) -> None:
-    """Header detection skips blank/title rows and caps at max_scan."""
+    """Header detection gates (#13): coverage, textiness, type contrast."""
     assert detect_header_row(rows, max_scan=5) == expected
 
 

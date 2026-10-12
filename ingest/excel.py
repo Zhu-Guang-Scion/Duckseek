@@ -11,6 +11,7 @@ xlrd-based header probe so report titles never become column names.
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,25 +35,114 @@ _READ_XLSX_SQL = "SELECT * FROM read_xlsx(?, sheet = ?, header = true, stop_at_e
 _extension_available: bool | None = None
 
 
-def detect_header_row(rows: list[list[Any]], *, max_scan: int = 5) -> int:
-    """Return the 0-based index of the header row inside ``rows``.
+def _is_blank_cell(value: Any) -> bool:
+    """True for None or whitespace-only cells."""
+    return value is None or str(value).strip() == ""
 
-    A row qualifies as the header when it holds at least two non-empty cells;
-    blank rows and single-cell "report title" rows are skipped. When no row
-    qualifies within ``max_scan`` rows, ``max_scan`` is returned (scan cap).
+
+def _is_data_like(value: Any) -> bool:
+    """True when a cell reads as data (number/parseable-numeric/date), not prose.
+
+    Numeric-parseable strings count as data (chart-of-account codes like
+    '1002' are data, not header words) — jekit feedback #13 R2.
+    """
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return True
+    if isinstance(value, datetime | date):
+        return True
+    text = str(value).strip()
+    if not text:
+        return False
+    try:
+        float(text.replace(",", ""))
+    except ValueError:
+        return False
+    return True
+
+
+def _row_profile(row: list[Any]) -> tuple[int, int]:
+    """Return ``(non_empty, rightmost_index)`` of one row."""
+    non_empty = 0
+    rightmost = -1
+    for index, value in enumerate(row):
+        if not _is_blank_cell(value):
+            non_empty += 1
+            rightmost = index
+    return non_empty, rightmost
+
+
+def detect_header_row(rows: list[list[Any]], *, max_scan: int = 5) -> int:
+    """Return the 0-based header row index inside ``rows`` (JE feedback #13).
+
+    Candidate generation keeps the original signal (≥2 non-empty cells);
+    candidates then pass three deterministic gates — jekit's four factors
+    minus the domain dictionary, gates instead of tuned weights:
+
+    - coverage: non-empty cells span at least half the window's effective
+      width (merged-cell report titles fill 1–2 cells over a wide table);
+    - textiness: most non-empty cells are NOT data-like (numbers, numeric
+      strings, dates) — headers are words;
+    - type contrast: the NEXT non-empty row is mostly data-like (the
+      text→data transition marks the boundary; looking only at the row
+      itself is the classic mistake).
+
+    Fallback is honest (R6b): when nothing qualifies, row 0 is returned with
+    an explicit warning instead of silently skipping ``max_scan`` rows.
 
     Args:
-        rows: Leading sheet rows as raw cell values.
-        max_scan: Maximum number of rows to inspect.
+        rows: Leading sheet rows as raw cell values (one extra row beyond
+            ``max_scan`` enables the contrast gate for the last candidate).
+        max_scan: Maximum number of rows to consider as header candidates.
 
     Returns:
-        The 0-based header row index, or ``max_scan`` when capped.
+        The 0-based header row index, or 0 with a warning when no row
+        qualifies.
     """
-    for index, row in enumerate(rows[:max_scan]):
-        non_empty = sum(1 for value in row if value is not None and str(value).strip() != "")
-        if non_empty >= 2:
-            return index
-    return max_scan
+    window = rows[:max_scan]
+    effective_width = max((_row_profile(row)[1] for row in window), default=-1) + 1
+    for index, row in enumerate(window):
+        non_empty, _ = _row_profile(row)
+        if non_empty < 2:
+            continue
+        if effective_width and non_empty < effective_width * 0.5:
+            continue  # sparse merged title over a wide table (R1)
+        cells = [value for value in row if not _is_blank_cell(value)]
+        textiness = sum(1 for value in cells if not _is_data_like(value)) / len(cells)
+        if textiness < 0.6:
+            continue  # headers are words, not numbers (R2)
+        following = next(
+            (
+                later
+                for later in rows[index + 1 : max_scan + 1]
+                if _row_profile(later)[0] >= 2
+            ),
+            None,
+        )
+        if following is not None:
+            nxt = [value for value in following if not _is_blank_cell(value)]
+            nxt_data = sum(1 for value in nxt if _is_data_like(value)) / len(nxt)
+            cur_data = sum(1 for value in cells if _is_data_like(value)) / len(cells)
+            if nxt_data <= cur_data:
+                # No text→data transition below (R4, relative form: the next
+                # row must be MORE data-like than the candidate — an absolute
+                # ≥0.5 share is ledger-domain tuning and breaks on generic
+                # mixed columns like P001|100.0|北京).
+                continue
+        if index > 0:
+            logger.info(
+                "header row detected at row %d (the %d row(s) above will be skipped)",
+                index + 1,
+                index,
+            )
+        return index
+    logger.warning(
+        "no row qualifies as header within the first %d rows; "
+        "falling back to row 0 — verify the ingested column names",
+        max_scan,
+    )
+    return 0
 
 
 def _load_excel_extension() -> bool:
@@ -103,7 +193,7 @@ def _probe_header_row(source: Path, sheet: str, scan_rows: int) -> int:
             worksheet = workbook.sheet_by_name(sheet)
             rows = [
                 list(worksheet.row_values(row_index))
-                for row_index in range(min(scan_rows, worksheet.nrows))
+                for row_index in range(min(scan_rows + 1, worksheet.nrows))
             ]
         finally:
             workbook.release_resources()
@@ -113,7 +203,7 @@ def _probe_header_row(source: Path, sheet: str, scan_rows: int) -> int:
         worksheet = workbook[sheet]
         rows = [
             list(row)
-            for row in worksheet.iter_rows(min_row=1, max_row=scan_rows, values_only=True)
+            for row in worksheet.iter_rows(min_row=1, max_row=scan_rows + 1, values_only=True)
         ]
     finally:
         workbook.close()
