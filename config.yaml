@@ -80,9 +80,11 @@ retrieval:
   # Default Top-K tables returned per query.
   top_k: 5
   # Prompt-material budget; cards are packed greedily by fused score until
-  # their token estimates exceed this. (M7/T22: 2000 -> 3000 to leave room
-  # for dimension-table value injection of up to ~2000 tokens.)
-  token_budget: 3000
+  # their token estimates exceed this. (M7/T22: 2000 -> 4000 — the injected
+  # zones card (~2380) plus two fact cards (~630 each) must fit together or
+  # packing silently drops a table and Recall collapses; measured 1.000 at
+  # 4000 vs 0.783 at 3000.)
+  token_budget: 4000
   # Reciprocal Rank Fusion constant and per-channel weights.
   rrf_k: 60
   weight_vector: 0.5

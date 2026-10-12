@@ -204,3 +204,27 @@ def test_card_doc_is_frozen_and_replaceable(config: Nl2DataConfig) -> None:
     bumped = replace(doc, mtime=doc.mtime + 1.0)
     assert bumped.mtime == doc.mtime + 1.0
     assert bumped.id == doc.id
+
+
+def test_strip_values_section_keeps_schema_only() -> None:
+    """Retrieval-channel text excludes the injected value block (M7/T22 fix).
+
+    Regression pin: values inside the index text grew the zones card
+    ~260 -> ~2400 tokens and Recall@3 collapsed 1.000 -> 0.783 (BM25
+    length normalization + embedding drift); prompts keep the full file.
+    """
+    from retrieval.index import strip_values_section
+
+    header = '## ' + '维度表全量值' + '(共 3 行)'
+    line = chr(10)
+    full = (
+        '# 表:t' + line + line + '适用术语:(无)' + line + line
+        + header + line + '过滤条件必须使用下列值原文。' + line
+        + 'a|1' + line + 'b|2' + line
+    )
+    stripped = strip_values_section(full)
+    assert '维度表全量值' not in stripped and 'a|1' not in stripped
+    assert '# 表:t' in stripped and '适用术语:(无)' in stripped
+    assert header in full  # sanity: full text still carries values
+    plain = '# 表:x' + line + '适用术语:(无)' + line
+    assert strip_values_section(plain) == plain

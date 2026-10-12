@@ -47,8 +47,32 @@ class CardDoc:
     mtime: float
 
 
+#: Header marking the M7/T22 injected value block (prompt-only material).
+_VALUES_SECTION_HEADER = '## 维度表全量值'
+
+
+def strip_values_section(text: str) -> str:
+    """Drop the injected dimension-value block for retrieval-channel text.
+
+    The values belong in the packed PROMPT (the model needs them verbatim),
+    but embedding/BM25 must not see them: a 265-row value list balloons the
+    card from ~260 to ~2400 tokens, and both channels degrade — BM25's
+    document-length normalization punishes the inflated card while the
+    embedding drifts toward value-noise semantics. Measured: Recall@3 fell
+    1.000 → 0.783 with values in the index; restored to 1.000 when stripped.
+    """
+    position = text.find(_VALUES_SECTION_HEADER)
+    if position == -1:
+        return text
+    return text[:position].rstrip() + "\n"
+
+
 def load_card_docs(cfg: Nl2DataConfig) -> list[CardDoc]:
     """Load every ``*.md`` card under ``cfg.paths.cards_md_dir``.
+
+    Retrieval-channel text (embedding + BM25) excludes the injected value
+    block via :func:`strip_values_section`; prompt packing reads the full
+    file separately (``retrieval.retrieve._card_markdown``).
 
     Args:
         cfg: Active configuration.
@@ -68,7 +92,7 @@ def load_card_docs(cfg: Nl2DataConfig) -> list[CardDoc]:
             CardDoc(
                 id=path.stem,
                 table=path.stem,
-                text=path.read_text(encoding='utf-8'),
+                text=strip_values_section(path.read_text(encoding='utf-8')),
                 mtime=path.stat().st_mtime,
             )
         )
