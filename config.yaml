@@ -57,6 +57,11 @@ cards:
   # Tables with more columns fold the per-column list in Markdown
   # (JSON always keeps every column).
   markdown_column_fold_limit: 100
+  # M7/T22: small dimension tables (<= dim_value_max_rows) inject their
+  # full value list into the card, token-capped with mandatory truncation
+  # disclosure; 0 disables injection.
+  dim_value_max_rows: 500
+  dim_value_token_cap: 2000
 
 # Token estimation used for prompt budgets (T5 cards, T7 retrieval).
 tokens:
@@ -69,8 +74,9 @@ retrieval:
   # Default Top-K tables returned per query.
   top_k: 5
   # Prompt-material budget; cards are packed greedily by fused score until
-  # their token estimates exceed this.
-  token_budget: 2000
+  # their token estimates exceed this. (M7/T22: 2000 -> 3000 to leave room
+  # for dimension-table value injection of up to ~2000 tokens.)
+  token_budget: 3000
   # Reciprocal Rank Fusion constant and per-channel weights.
   rrf_k: 60
   weight_vector: 0.5

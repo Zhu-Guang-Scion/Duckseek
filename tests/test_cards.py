@@ -8,6 +8,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -325,3 +326,85 @@ def test_corrupt_profile_skipped_with_error(
     assert cards == []
     assert "corrupt" in caplog.text
     assert "ERROR" in caplog.text
+
+
+# ---------------------------------------------- M7/T22 dim-value injection ----
+def _dim_profile_and_parquet(
+    config: Nl2DataConfig, rows: int
+) -> tuple[dict, Path]:
+    """A tiny dimension table (id/name) registered through the ingest path."""
+    import pandas as pd
+
+    from ingest.common import PreparedTable, ingest_tables
+
+    frame = pd.DataFrame(
+        {"区号": [f"z{i}" for i in range(rows)], "城市": [f"City{i}" for i in range(rows)]}
+    )
+    ingest_tables(
+        source_name=f"dim{rows}",
+        source_type="excel",
+        source_path=config.paths.data_dir / f"dim{rows}.xlsx",
+        tables=[PreparedTable(original_name="维表", frame=frame)],
+        cfg=config,
+    )
+    from catalog.profiler import run_profiles
+
+    run_profiles(config)
+    profile = json.loads(
+        (config.paths.profiles_dir / "wei_biao.json").read_text(encoding="utf-8")
+    )
+    parquet = config.paths.parquet_dir / f"dim{rows}" / "wei_biao.parquet"
+    if not parquet.is_file():
+        matches = list((config.paths.parquet_dir / f"dim{rows}").glob("*.parquet"))
+        parquet = matches[0]
+    return profile, parquet
+
+
+def test_dim_value_injection_full(config: Nl2DataConfig) -> None:
+    """A <=500-row dimension table injects its full value list verbatim."""
+    profile, parquet = _dim_profile_and_parquet(config, 3)
+    card, markdown = build_card(profile, None, [], config, parquet_path=parquet)
+    assert "维度表全量值(共 3 行)" in markdown
+    assert "不要臆造或翻译库值" in markdown
+    for i in range(3):
+        assert f"z{i}|City{i}" in markdown
+    assert "已截断" not in markdown
+    assert card["dim_values"] == {
+        "rows_total": 3, "rows_injected": 3, "truncated": False,
+        **{"token_estimate": card["dim_values"]["token_estimate"]},
+    }
+
+
+def test_dim_value_injection_truncates_with_disclosure(
+    config: Nl2DataConfig,
+) -> None:
+    """Token cap overflow truncates rows and discloses it mandatorily."""
+    from dataclasses import replace
+
+    profile, parquet = _dim_profile_and_parquet(config, 20)
+    capped = replace(
+        config,
+        cards=replace(
+            config.cards, dim_value_token_cap=25  # header + ~1 row only
+        ),
+    )
+    card, markdown = build_card(profile, None, [], capped, parquet_path=parquet)
+    assert card["dim_values"]["truncated"] is True
+    assert card["dim_values"]["rows_injected"] < 20
+    assert "已截断:前" in markdown and "/共 20 行" in markdown
+
+
+def test_dim_value_injection_disabled_and_large_table(
+    config: Nl2DataConfig,
+) -> None:
+    """0 disables injection; tables above the row threshold never inject."""
+    from dataclasses import replace
+
+    profile, parquet = _dim_profile_and_parquet(config, 3)
+    off = replace(config, cards=replace(config.cards, dim_value_max_rows=0))
+    card, markdown = build_card(profile, None, [], off, parquet_path=parquet)
+    assert "维度表全量值" not in markdown and "dim_values" not in card
+
+    small = replace(config, cards=replace(config.cards, dim_value_max_rows=2))
+    card2, markdown2 = build_card(profile, None, [], small, parquet_path=parquet)
+    assert "维度表全量值" not in markdown2 and "dim_values" not in card2

@@ -1,4 +1,4 @@
-"""M-Schema table card generation (milestone 2, T5).
+"""M-Schema table card generation (milestone 2, T5; M7/T22 value injection).
 
 For every profile under ``data/catalog/profiles`` two artifacts are produced:
 
@@ -20,6 +20,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pyarrow.parquet as pq
+
 from catalog.store import CatalogStore
 from catalog.table_notes import load_table_notes
 from nl2data.config import Nl2DataConfig
@@ -29,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 # Profile stat keys that collapse into the card column's ``stats`` dict.
 _STAT_KEYS: tuple[str, ...] = ("min", "max", "quantiles", "avg_len")
+
+#: Per-cell character cap inside the injected dimension-value block.
+_DIM_VALUE_CELL_CHARS = 40
 
 
 def _profile_ref(cfg: Nl2DataConfig, table: str) -> str:
@@ -119,7 +124,109 @@ def _terms_line(terms: list[dict[str, Any]]) -> str:
     return "适用术语:" + ";".join(_term_fragment(term) for term in terms)
 
 
-def _render_markdown(card: dict[str, Any], cfg: Nl2DataConfig) -> str:
+def _dim_cell(value: Any) -> str:
+    """One injected cell: NULL keeps its label, long values truncate."""
+    if value is None:
+        return "NULL"
+    text = str(value)
+    if len(text) > _DIM_VALUE_CELL_CHARS:
+        return text[:_DIM_VALUE_CELL_CHARS] + "…"
+    return text
+
+
+def _dim_values_section(
+    profile: dict[str, Any], parquet_path: Path | None, cfg: Nl2DataConfig
+) -> tuple[str, dict[str, Any]] | None:
+    """Full-value block for small dimension tables (M7/T22), or ``None``.
+
+    Evidence-backed full injection (docs/research-m7-market.md §三): for
+    tables at or below ``cards.dim_value_max_rows`` the entire value list
+    enters the card verbatim, guarded by an instruction to use these values
+    as-is and to ask for clarification instead of inventing one. The block
+    is token-capped; overflow truncates with a mandatory disclosure line.
+    """
+    max_rows = int(cfg.cards.dim_value_max_rows)
+    rows_total = int(profile.get("rows", 0))
+    if max_rows <= 0 or rows_total <= 0 or rows_total > max_rows:
+        return None
+    if parquet_path is None or not parquet_path.is_file():
+        logger.warning(
+            "dimension-value injection skipped for %s: parquet not found",
+            profile.get("table"),
+        )
+        return None
+    columns = [str(col.get("name", "")) for col in profile.get("columns", [])]
+    if not columns:
+        return None
+    try:
+        table = pq.read_table(parquet_path)
+    except Exception as exc:  # noqa: BLE001 -- degrade to no injection
+        logger.warning("dim-value read failed for %s: %s", parquet_path, exc)
+        return None
+    # Parquet column names differ by write path: the zero-copy register
+    # (T-P) keeps ORIGINAL headers while converted ingestion (excel/access)
+    # writes SAFE names. Resolve per column: original first, safe as fallback.
+    column_names = set(table.column_names)
+
+    def _lookup(name: str, original: str) -> str | None:
+        if original in column_names:
+            return original
+        if name in column_names:
+            return name
+        return None
+
+    resolved: list[tuple[str, str]] = []
+    for col in profile.get("columns", []):
+        name = str(col.get("name", ""))
+        original = str(col.get("original_name") or name)
+        found = _lookup(name, original)
+        if found is None:
+            logger.warning(
+                "dim-value injection skipped for %s: parquet lacks %s/%s",
+                profile.get("table"), original, name,
+            )
+            return None
+        resolved.append((name, found))
+    records = table.to_pylist()
+    cap = max(int(cfg.cards.dim_value_token_cap), 1)
+    lines: list[str] = ["|".join(columns)]
+    used = estimate_tokens(lines[0] + "\n", cfg.tokens)
+    truncated = False
+    injected = 0
+    for record in records:
+        line = "|".join(_dim_cell(record.get(found)) for _, found in resolved)
+        cost = estimate_tokens(line + "\n", cfg.tokens)
+        if used + cost > cap:
+            truncated = True
+            break
+        lines.append(line)
+        used += cost
+        injected += 1
+    if truncated and injected == 0:
+        return None  # cap too small to carry any row: block would mislead
+    section = "\n".join(
+        [
+            "",
+            f"## 维度表全量值(共 {rows_total} 行)",
+            "过滤条件必须使用下列值原文;问句实体找不到对应值时应在 "
+            "needs_clarification 中说明,不要臆造或翻译库值。",
+            *lines,
+        ]
+    )
+    if truncated:
+        section += f"\n(已截断:前 {injected} 行/共 {rows_total} 行,受 token 预算限制)"
+    meta = {
+        "rows_total": rows_total,
+        "rows_injected": injected,
+        "truncated": truncated,
+        "token_estimate": used,
+    }
+    return section, meta
+
+
+def _render_markdown(
+    card: dict[str, Any], cfg: Nl2DataConfig, dim_section: str | None = None
+) -> str:
     """Render the frozen M-Schema markdown template for a card."""
     limit = max(int(cfg.cards.markdown_column_fold_limit), 0)
     columns: list[dict[str, Any]] = card["columns"]
@@ -145,6 +252,8 @@ def _render_markdown(card: dict[str, Any], cfg: Nl2DataConfig) -> str:
             f"> 共 {len(columns)} 列,已折叠其余 {len(columns) - limit} 列"
             "(完整清单见 JSON 卡片)"
         )
+    if dim_section:
+        lines.append(dim_section)
     lines.append("")
     lines.append(_terms_line(card["terms"]))
     return "\n".join(lines) + "\n"
@@ -155,6 +264,7 @@ def build_card(
     description: str | None,
     terms: list[dict[str, Any]],
     cfg: Nl2DataConfig,
+    parquet_path: Path | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Assemble the JSON card dict and markdown text for one profile.
 
@@ -166,6 +276,9 @@ def build_card(
             caller has none.
         cfg: Active configuration; supplies card thresholds and the token
             estimator.
+        parquet_path: Data file for M7/T22 dimension-value injection; when
+            the profile is a small dimension table the full value list is
+            injected (token-capped). ``None`` skips injection.
 
     Returns:
         The ``(card, markdown)`` pair; ``card["token_estimate"]`` measures
@@ -183,7 +296,13 @@ def build_card(
         "columns": [_card_column(col, cfg) for col in profile.get("columns", [])],
         "terms": list(terms),
     }
-    markdown = _render_markdown(card, cfg)
+    dim = _dim_values_section(profile, parquet_path, cfg)
+    if dim is not None:
+        section, meta = dim
+        card["dim_values"] = meta
+    else:
+        section = None
+    markdown = _render_markdown(card, cfg, dim_section=section)
     card["token_estimate"] = estimate_tokens(markdown, cfg.tokens)
     return card, markdown
 
@@ -272,10 +391,24 @@ def build_cards(
         if not isinstance(profile, dict):
             logger.error("profile %s is not a JSON object; skipping", profile_path.name)
             continue
+        parquet_path = _resolve_parquet(store, table, cfg)
         card, markdown = build_card(
-            profile, notes.get(table), term_map.get(table, []), cfg
+            profile, notes.get(table), term_map.get(table, []), cfg,
+            parquet_path=parquet_path,
         )
         write_card_files(card, markdown, cfg)
         cards.append(card)
         logger.info("built card for %s (%d columns)", table, len(card["columns"]))
     return cards
+
+
+def _resolve_parquet(store: CatalogStore, table: str, cfg: Nl2DataConfig) -> Path | None:
+    """Absolute parquet path for ``table`` from the catalog lineage."""
+    for source in store.sources:
+        for entry in source.tables:
+            if entry.name == table:
+                path = Path(entry.parquet)
+                if not path.is_absolute():
+                    path = cfg.paths.data_dir.parent / path
+                return path
+    return None

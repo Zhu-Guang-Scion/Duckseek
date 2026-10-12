@@ -82,10 +82,19 @@ class ProfileConfig:
 
 @dataclass(frozen=True)
 class CardsConfig:
-    """Table-card generation thresholds (milestone 2, T5)."""
+    """Table-card generation thresholds (milestone 2, T5; M7/T22 values).
+
+    ``dim_value_max_rows``: small dimension tables at or below this row count
+    get their full value list injected into the card (evidence: full
+    injection beats retrieval when content fits the context window; 0=off).
+    ``dim_value_token_cap`` bounds the injected block's token estimate;
+    overflow truncates with a mandatory disclosure line.
+    """
 
     enum_value_max_chars: int = 50
     markdown_column_fold_limit: int = 100
+    dim_value_max_rows: int = 500
+    dim_value_token_cap: int = 2000
 
 
 @dataclass(frozen=True)
@@ -382,6 +391,8 @@ def load_config(path: Path | None = None) -> Nl2DataConfig:
             markdown_column_fold_limit=int(
                 cards_section.get("markdown_column_fold_limit", 100)
             ),
+            dim_value_max_rows=int(cards_section.get("dim_value_max_rows", 500)),
+            dim_value_token_cap=int(cards_section.get("dim_value_token_cap", 2000)),
         ),
         tokens=TokensConfig(estimator=str(tokens_section.get("estimator", "len_div_4"))),
         retrieval=RetrievalConfig(

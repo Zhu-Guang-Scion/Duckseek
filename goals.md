@@ -87,10 +87,10 @@
 - T20 export/ 三模块（chart_spec / xlsx / manifest）+ 配置 + CLI/MCP 双端入口（MCP 经 ask 可选参数 export 触发）—— 🟢
 - 完成判据：双端可导出含 LLM 判定图表的 xlsx + 自描述 manifest；截断必披露；降级链不阻断导出；T19 ask 六键契约零回归
   2026-09-24 V6 验收：CLI --export 与 /export xlsx、MCP 两态（带 export 附 artifacts 键/缺省恰六键防回归钉死）全部实测；截断披露（meta ⚠ 行 + manifest truncated/total/exported）与降级链（chart_llm 关闭零调用、LlmError scrub、校验不过诚实拒画）测试在案；顾问 2 必修 3 建议全落地（截断披露/version:1/砍 scatter/pie 恰 1 measure/tool_version 溯源）。质量门 ruff 零告警、513 passed 覆盖 91.61%。真实 LLM 抽查件测试就位（slow,密钥缺席自跳过）。
-**里程碑 7：准确率工程一期** —— 状态：🟡 进行中（2026-09-26 人类裁定立项，预研 docs/phase2-research.md）
-- T21 多候选 SQL + 执行一致性选择器（N=3 并行同温 0、护栏→执行→结果多重集合多数决、无多数时如实标注 candidates_disagree 并取首成功；qa.candidate_count 默认 1=旧行为，仓库配置 3）—— ⚪
-- T22 维度表值注入（≤500 行维度表全量值注入卡片，token 封顶 + 截断披露，补齐 zone 类实体值缺口）—— ⚪
-- 完成判据：摆动清单 case 的多轮 eval 方差下降（真实 A/B，待有效密钥）；实体类 golden case 通过率提升；T19→七键契约迁移零回归
+**里程碑 7：准确率工程一期** —— 状态：🟡 进行中（实现完成；真实 A/B 评测待有效密钥）
+- T21 多候选 SQL + 执行一致性选择器 —— 🟢（2026-09-26：并行候选温 0.8（调研修正）、护栏→执行→结果值多重集合多数决（G8b 判例：忽略列名别名）、candidates_disagree 七键披露、legacy count=1 等价；commit 379ed7c）
+- T22 维度表值注入 —— 🟢（2026-09-26：≤500 行全量注入 + 护栏指令行（值原文/勿臆造/找不到则澄清）+ token 封顶截断披露；parquet 列名双态兼容（零拷贝=原始名/转换=安全名）；taxi_zones 实测 215/265 行注入）
+- 完成判据：摆动清单 case 的多轮 eval 方差下降（真实 A/B，待有效密钥）；实体类 golden case 通过率提升；T19→七键契约迁移零回归 ✅（七键断言在案）
 ### 阶段二：准确率工程（MVP 验收后启动；2026-09-26 人类裁定 Python 分析沙箱除名：任意代码执行 vs SQL-only 双防线是架构级恶化且 619 问审计零需求，降级为按需再评估）
 多候选 SQL + 选择器、实体索引、查询缓存。
 
@@ -189,3 +189,4 @@ Web UI + MCP Server、多用户最小集（只读强制、审计日志）、dock
 - 2026-09-24 仓库转公开（github.com/Zhu-Guang-Scion/Duckseek，visibility=public）：CI 实证收口——run #5（885b7fd 平台修复）起连续五轮 success（#6 workflow_dispatch、#7 README 数据形态、#8 M6 feature、#9 双语 README），此前 #1-#4 红色均为修复前历史快照；公开前密钥复扫 HEAD 树全零命中；README 已双语化并置顶数据主权/保密条（本地执行、明细永不进提示词、无遥测，JE Testing 口径反哺）。About 描述人类已设（含「适合审计及财务人员使用」定位句），topics 待贴（14 候选已提供：nl2sql/text-to-sql/duckdb/excel/parquet/local-first/privacy/data-sovereignty/audit/journal-entry-testing/mcp/llm/cli/chinese）。
 - 2026-09-26 M7 立项（准确率工程一期，人类裁定「按预研建议实行、沙箱除名、开始开发」）：§4 阶段二清单移除 Python 分析沙箱；里程碑 7 立项 T21（多候选+执行一致性选择器，开放问题取预研默认：N=3、同温 0、candidates_disagree 披露）与 T22（维度表值注入，阈值 500 行、token 封顶截断必披露）；M7-C 查询缓存暂缓（E3 证明个人规模收益边缘）。真实 A/B 评测待有效 LLM 密钥（同 M6 slow 抽查件挂起项）。
 - 2026-09-26 M7 公开市场调研归档（人类委托「开发前调研、鼓励子智能体」，三路 Explore 并行，docs/research-m7-market.md）：多候选选择器——主流产品级引擎（vanna/DB-GPT/WrenAI/SuperSonic/Chat2DB）零实现执行投票，研究系（C3/DAIL-SQL/CHESS/MCS/CHASE/CSC-SQL）验证执行结果多数决为廉价基线；温度证据 0.8-1.0（原定温 0 被否定）。值链接——SuperSonic 词典+召回最完整；NeurIPS 2024「Death of Schema Linking」与 SIGMOD 2026 值链接对比支持小表全量注入优于检索。设计修正四处：候选专属温度 0.8、注入 token 上限 2000（原 1200）、检索总预算 3000（原 2000）、护栏指令入卡片层（不动 system.md）；中文别名列受 T5 禁 LLM 契约约束留 glossary 通路（待办）。
+- 2026-09-26 M7 实现完成（T21+T22，开发前按人类指示完成三路子智能体公开市场调研并修正四处设计——docs/research-m7-market.md）：T21 多候选执行一致性选择器（379ed7c）——qa.candidate_count=3 仓库配置（默认 1=legacy 等价已测）、候选专属温 0.8 并行生成、逐候选护栏+执行、结果值多重集合多数决（列名别名按 G8b 判例忽略）、无严格多数取首成功并披露 candidates_disagree（MCP 第七键+CLI 警示行+审计三字段）；T22 维度表值注入——cards.dim_value_max_rows=500/token_cap=2000、注入段携带护栏指令（值原文/勿臆造/找不到则澄清，卡片层实现不动 system.md）、截断必披露、parquet 列名原始名/安全名双态兼容；retrieval.token_budget 2000→3000；taxi_zones 实测注入 215/265 行（预算给事实卡留位的有意截断）。质量门 521 passed 覆盖 91.48%、ruff 零告警。挂起：真实 A/B 评测与索引重建（卡片已变，需 EMB 凭证跑 index build）待有效密钥。
