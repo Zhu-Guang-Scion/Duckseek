@@ -211,6 +211,7 @@ golden 集（`eval/recall_golden.yaml`，20 条真实问答三元组）与冻结
 
 - [goals.md](goals.md) —— 工程内部事实源（目标、锁定决策、契约、里程碑记录）
 - [docs/architecture.md](docs/architecture.md) —— 架构与设计决策全文（本 README 母体）
+- [docs/data-security.md](docs/data-security.md) —— **数据安全说明**（数据存放 / 出网内容清单 / 凭证 / 查询安全）
 - [docs/milestone-{1..5}-notes.md](docs/) —— 各里程碑验收留档
 - [skills/duckseek/](skills/duckseek/) —— Skill 三件套（SKILL.md / 注册指南 / 凭证模板）
 - [docs/table_notes.md](docs/table_notes.md) —— 表级说明（注入卡片）
@@ -230,7 +231,8 @@ confidential datasets. DuckSeek keeps everything on your machine:
 
 - **Data sovereignty** — source files and query results never leave the host;
   the LLM prompt only contains schema cards and compact statistics, never raw
-  rows; no telemetry.
+  rows; no telemetry. Full statement of what is stored where and what leaves
+  your machine: [docs/data-security.md](docs/data-security.md)（中文）.
 - **Read-only by construction** — SQL passes a sqlglot parse-tree guardrail
   (statement whitelist, table whitelist, column existence, forced LIMIT) and
   then runs on a `read_only=True` DuckDB sandbox; queried data cannot be
